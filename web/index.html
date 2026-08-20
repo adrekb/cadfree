@@ -124,7 +124,7 @@
         <div class="cad-agent-input">
           <textarea id="chat-input" placeholder="I want a bracket that holds 50 lb and uses at most 100 g of filament…"></textarea>
           <div style="display:flex;justify-content:flex-end;margin-top:8px">
-            <button class="btn btn-primary" onclick="sendChat()">
+            <button class="btn btn-primary" id="chat-send" onclick="sendChat()">
               <svg class="ico"><use href="#i-send"/></svg> Send
             </button>
           </div>
@@ -186,6 +186,20 @@
       <p class="muted small" id="key-status"></p>
     </div>
     <div class="settings-card">
+      <div class="settings-head"><svg class="ico"><use href="#i-search"/></svg><h3>Standards search</h3></div>
+      <p class="muted">The agent looks up ISO / ASTM / ASME / DIN / SAE / MIL-STD and manufacturer datasheets. DuckDuckGo is the default. A Brave key is better if you have one. Full PDFs are usually paywalled — Cadfree will cite the URL instead of inventing clauses.</p>
+      <div class="settings-row">
+        <select id="search-provider">
+          <option value="auto">Auto (Brave if keyed, else DuckDuckGo)</option>
+          <option value="brave">Brave Search API</option>
+          <option value="duckduckgo">DuckDuckGo only</option>
+        </select>
+        <input id="search-key" type="password" placeholder="Brave API key (optional)" autocomplete="off">
+        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+      </div>
+      <p class="muted small" id="search-status"></p>
+    </div>
+    <div class="settings-card">
       <div class="settings-head"><svg class="ico"><use href="#i-palette"/></svg><h3>Appearance</h3></div>
       <p class="muted">Carrot theme engine — light/dark plus the accent palette.</p>
       <div id="theme-modes" class="theme-swatches"></div>
@@ -205,6 +219,10 @@
       <p>The production path is CadQuery → STEP/STL → <b>Gmsh</b> tetrahedral mesh → <b>CalculiX (ccx)</b> linear static → von Mises. That is the open stack (PyCCX, FreeCAD FEM, CadQuery’s gmsh plugin). Cadfree probes for <code>gmsh</code> and <code>ccx</code> and will not pretend FEA ran if they are missing.</p>
       <h3>You can still edit the CAD</h3>
       <p>The studio is not chat-only. PARAMS sliders rebuild without the model. The Monaco editor (Carrot’s code tab) lets you rewrite CadQuery yourself, then Rebuild. Plan mode proposes; Agent mode is allowed to write files and run MATLAB.</p>
+      <h3>Survey before geometry</h3>
+      <p>The agent must not guess load direction, fasteners, environment, safety factor, or which standard applies. It opens a form in the chat. Answer it; the turn stays paused (SSE keepalives) until you submit.</p>
+      <h3>Standards search</h3>
+      <p>ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, and manufacturer datasheets are searched on the public web, ranked with standards bodies first. The agent cites the URL. If the document is a paid PDF, it says so and does not invent clause numbers. Optional Brave Search key is in Settings.</p>
     </div>
   </section>
 </main>

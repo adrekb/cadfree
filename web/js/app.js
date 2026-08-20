@@ -4,6 +4,8 @@ let coderMode = 'agent';
 let monacoEditor = null;
 let catalog = null;
 let paramTimer = null;
+let surveyPending = false;
+let agentStreaming = false;
 
 function escHtml(str) {
     const d = document.createElement('div');
@@ -48,8 +50,8 @@ function setCoderMode(mode) {
     document.getElementById('mode-plan').classList.toggle('on', coderMode === 'plan');
     document.getElementById('mode-act').classList.toggle('on', coderMode === 'agent');
     document.getElementById('mode-hint').textContent = coderMode === 'plan'
-        ? 'Read-only. The agent proposes; CadQuery and MATLAB do not run.'
-        : 'Agent can write CadQuery and run MATLAB.';
+        ? 'Read-only CAD. The agent can still survey you and search standards.'
+        : 'Agent can write CadQuery and run MATLAB. It will survey you instead of guessing.';
 }
 
 function toggleAgentSide() {
@@ -191,6 +193,11 @@ async function loadStudio(id) {
     renderParams(p.params || {});
     renderFeasibility(p.feasibility || {});
     renderMessages(p.messages || []);
+    (p.pending_surveys || []).forEach(s => renderSurvey({
+        survey_id: s.survey_id || s.id,
+        title: s.title,
+        questions: s.questions,
+    }));
     document.getElementById('stl-download').href = '/api/projects/' + id + '/stl';
     if (window.cadfreeViewer) window.cadfreeViewer.load('/api/projects/' + id + '/stl?t=' + Date.now());
 }
@@ -283,56 +290,205 @@ function appendMsg(role, text, cls) {
     return div;
 }
 
-async function sendChat() {
-    if (!currentProjectId) {
-        alert('Create a project first.');
+function setComposerLocked(locked) {
+    const input = document.getElementById('chat-input');
+    const btn = document.getElementById('chat-send');
+    input.disabled = locked;
+    btn.disabled = locked;
+}
+
+function surveyFieldHtml(q) {
+    const id = escHtml(q.id);
+    const prompt = escHtml(q.prompt) + (q.required === false ? '' : ' *');
+    const help = q.help ? `<p class="muted small">${escHtml(q.help)}</p>` : '';
+    const unit = q.unit ? `<span class="muted small">${escHtml(q.unit)}</span>` : '';
+    const req = q.required === false ? '' : 'required';
+    if (q.type === 'choice') {
+        const opts = (q.options || []).map(o =>
+            `<label class="survey-opt"><input type="radio" name="${id}" value="${escHtml(o)}" ${req}> ${escHtml(o)}</label>`
+        ).join('');
+        return `<fieldset class="survey-q" data-qid="${id}" data-qtype="choice"><legend>${prompt}</legend>${help}${opts}</fieldset>`;
+    }
+    if (q.type === 'multi') {
+        const opts = (q.options || []).map(o =>
+            `<label class="survey-opt"><input type="checkbox" name="${id}" value="${escHtml(o)}"> ${escHtml(o)}</label>`
+        ).join('');
+        return `<fieldset class="survey-q" data-qid="${id}" data-qtype="multi"><legend>${prompt}</legend>${help}${opts}</fieldset>`;
+    }
+    if (q.type === 'bool') {
+        return `<fieldset class="survey-q" data-qid="${id}" data-qtype="bool"><legend>${prompt}</legend>${help}
+          <label class="survey-opt"><input type="radio" name="${id}" value="yes" ${req}> Yes</label>
+          <label class="survey-opt"><input type="radio" name="${id}" value="no"> No</label></fieldset>`;
+    }
+    if (q.type === 'number') {
+        return `<fieldset class="survey-q" data-qid="${id}" data-qtype="number"><legend>${prompt}</legend>${help}
+          <input type="number" step="any" ${req}> ${unit}</fieldset>`;
+    }
+    return `<fieldset class="survey-q" data-qid="${id}" data-qtype="text"><legend>${prompt}</legend>${help}
+      <input type="text" ${req}></fieldset>`;
+}
+
+function renderSurvey(ev) {
+    const sid = ev.survey_id || ev.id;
+    if (!sid) return;
+    if (document.querySelector(`.survey-wrap[data-survey-id="${sid}"]`)) return;
+    surveyPending = true;
+    setComposerLocked(true);
+    const log = document.getElementById('chat-log');
+    const div = document.createElement('div');
+    div.className = 'msg survey-wrap';
+    div.dataset.surveyId = sid;
+    const fields = (ev.questions || []).map(surveyFieldHtml).join('');
+    div.innerHTML = `<div class="who">survey</div>
+      <form class="survey-card" onsubmit="return submitSurveyForm(event, '${escHtml(sid)}')">
+        <h4>${escHtml(ev.title || 'A few questions before designing')}</h4>
+        ${fields || '<p class="muted">No questions.</p>'}
+        <button class="btn btn-primary" type="submit">Submit answers</button>
+      </form>`;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
+function collectSurveyAnswers(form) {
+    const answers = {};
+    form.querySelectorAll('.survey-q').forEach(fs => {
+        const qid = fs.dataset.qid;
+        const type = fs.dataset.qtype;
+        if (type === 'multi') {
+            answers[qid] = [...fs.querySelectorAll('input:checked')].map(i => i.value);
+        } else if (type === 'choice') {
+            const picked = fs.querySelector('input:checked');
+            answers[qid] = picked ? picked.value : '';
+        } else if (type === 'bool') {
+            const picked = fs.querySelector('input:checked');
+            answers[qid] = picked ? picked.value === 'yes' : null;
+        } else if (type === 'number') {
+            const inp = fs.querySelector('input');
+            answers[qid] = inp && inp.value !== '' ? Number(inp.value) : null;
+        } else {
+            const inp = fs.querySelector('input, textarea');
+            answers[qid] = inp ? inp.value : '';
+        }
+    });
+    return answers;
+}
+
+async function submitSurveyForm(event, surveyId) {
+    event.preventDefault();
+    if (!currentProjectId) return false;
+    const form = event.target;
+    const answers = collectSurveyAnswers(form);
+    await api('/api/projects/' + currentProjectId + '/survey/' + surveyId, {
+        method: 'POST', body: JSON.stringify({ answers }),
+    });
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    const note = document.createElement('p');
+    note.className = 'muted small';
+    note.textContent = 'Saved. The agent will continue.';
+    form.appendChild(note);
+    surveyPending = false;
+    if (!agentStreaming) {
+        setComposerLocked(false);
+        sendChatText('Survey submitted. Continue with those answers.');
+    }
+    return false;
+}
+
+function renderCitations(result) {
+    const hits = (result && (result.citations || result.results)) || [];
+    const log = document.getElementById('chat-log');
+    const div = document.createElement('div');
+    div.className = 'msg cites';
+    if (!hits.length) {
+        div.innerHTML = `<div class="who">standards</div><div class="muted">${escHtml((result && result.note) || 'No standards hits.')}</div>`;
+        log.appendChild(div);
         return;
     }
-    await saveSource();
+    div.innerHTML = '<div class="who">standards</div><ul class="cite-list">' +
+        hits.map(h => {
+            const ids = (h.standard_ids || []).join(', ');
+            const badge = h.source || (h.official ? 'body' : 'web');
+            return `<li><a href="${escHtml(h.url)}" target="_blank" rel="noopener">${escHtml(h.title || h.url)}</a>
+              <span class="cite-badge ${escHtml(badge)}">${escHtml(badge)}</span>
+              ${ids ? `<span class="muted small">${escHtml(ids)}</span>` : ''}</li>`;
+        }).join('') + '</ul>';
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
+async function sendChat() {
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
+    await sendChatText(text);
+}
+
+async function sendChatText(text) {
+    if (!currentProjectId) {
+        alert('Create a project first.');
+        return;
+    }
+    if (agentStreaming) return;
+    await saveSource();
     appendMsg('you', text);
-    const resp = await fetch('/api/projects/' + currentProjectId + '/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text, mode: coderMode }),
-    });
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    let assistant = null;
-    while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const chunks = buf.split('\n\n');
-        buf = chunks.pop();
-        for (const chunk of chunks) {
-            if (!chunk.startsWith('data: ')) continue;
-            let ev;
-            try { ev = JSON.parse(chunk.slice(6)); } catch (_) { continue; }
-            if (ev.type === 'assistant' || ev.type === 'assistant_partial') {
-                if (!assistant) assistant = appendMsg('cadfree', '');
-                assistant.lastChild.textContent += ev.content || '';
-            } else if (ev.type === 'tool_call') {
-                appendMsg('tool', ev.name, 'tool');
-            } else if (ev.type === 'tool_result' && ev.name === 'build_model' && ev.result && ev.result.ok) {
-                if (window.cadfreeViewer) {
-                    window.cadfreeViewer.load('/api/projects/' + currentProjectId + '/stl?t=' + Date.now());
+    agentStreaming = true;
+    setComposerLocked(true);
+    try {
+        const resp = await fetch('/api/projects/' + currentProjectId + '/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: text, mode: coderMode }),
+        });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let assistant = null;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const chunks = buf.split('\n\n');
+            buf = chunks.pop();
+            for (const chunk of chunks) {
+                if (!chunk.startsWith('data: ')) continue;
+                let ev;
+                try { ev = JSON.parse(chunk.slice(6)); } catch (_) { continue; }
+                if (ev.type === 'assistant' || ev.type === 'assistant_partial') {
+                    if (!assistant) assistant = appendMsg('cadfree', '');
+                    assistant.lastChild.textContent += ev.content || '';
+                } else if (ev.type === 'survey') {
+                    renderSurvey(ev);
+                } else if (ev.type === 'survey_answered') {
+                    surveyPending = false;
+                } else if (ev.type === 'tool_call') {
+                    appendMsg('tool', ev.name, 'tool');
+                } else if (ev.type === 'tool_result' && ev.name === 'search_standards') {
+                    renderCitations(ev.result || {});
+                } else if (ev.type === 'tool_result' && ev.name === 'read_url' && ev.result) {
+                    const r = ev.result;
+                    const label = (r.ok ? 'read ' : 'could not read ') + (r.url || '');
+                    appendMsg('search', label + (r.paywalled ? ' (paywalled)' : ''), 'tool');
+                } else if (ev.type === 'tool_result' && ev.name === 'build_model' && ev.result && ev.result.ok) {
+                    if (window.cadfreeViewer) {
+                        window.cadfreeViewer.load('/api/projects/' + currentProjectId + '/stl?t=' + Date.now());
+                    }
+                } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
+                    renderFeasibility(ev.result || {});
+                } else if (ev.type === 'error') {
+                    appendMsg('error', ev.message);
                 }
-            } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
-                renderFeasibility(ev.result || {});
-            } else if (ev.type === 'error') {
-                appendMsg('error', ev.message);
             }
         }
-    }
-    if (monacoEditor && currentProjectId) {
-        const p = await api('/api/projects/' + currentProjectId);
-        monacoEditor.setValue(p.cadquery_source || '');
-        renderParams(p.params || {});
+        if (monacoEditor && currentProjectId) {
+            const p = await api('/api/projects/' + currentProjectId);
+            monacoEditor.setValue(p.cadquery_source || '');
+            renderParams(p.params || {});
+        }
+    } finally {
+        agentStreaming = false;
+        if (!surveyPending) setComposerLocked(false);
     }
 }
 
@@ -342,6 +498,10 @@ async function loadSettings() {
     document.getElementById('llm-model').value = cfg.llm_model || '';
     document.getElementById('llm-base').value = cfg.llm_base_url || '';
     document.getElementById('key-status').textContent = cfg.llm_api_key_set ? 'A key is saved on this machine.' : 'No key saved yet.';
+    document.getElementById('search-provider').value = cfg.search_provider || 'auto';
+    document.getElementById('search-status').textContent = cfg.search_api_key_set
+        ? 'A Brave search key is saved on this machine.'
+        : 'DuckDuckGo (no key). Paste a Brave key for a stronger standards search.';
     if (typeof renderThemePicker === 'function') renderThemePicker();
 }
 
@@ -350,11 +510,15 @@ async function saveSettings() {
         llm_provider: document.getElementById('llm-provider').value,
         llm_model: document.getElementById('llm-model').value,
         llm_base_url: document.getElementById('llm-base').value,
+        search_provider: document.getElementById('search-provider').value,
     };
     const key = document.getElementById('llm-key').value.trim();
     if (key) body.llm_api_key = key;
+    const skey = document.getElementById('search-key').value.trim();
+    if (skey) body.search_api_key = skey;
     await api('/api/settings', { method: 'POST', body: JSON.stringify(body) });
     document.getElementById('llm-key').value = '';
+    document.getElementById('search-key').value = '';
     loadSettings();
     loadDashboard();
 }

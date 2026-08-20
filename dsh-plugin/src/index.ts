@@ -90,4 +90,34 @@ export default function apply(ctx: Context) {
       return runCli(projectId(), 'run_simulation', { prefer: args.prefer || 'auto' })
     },
   }))
+
+  ctx.tools.register(defineTool({
+    name: 'cadfree_search_standards',
+    description: 'Search ISO/ASTM/ASME/DIN/SAE/MIL-STD and manufacturer datasheets. Cite URLs; do not invent paywalled clauses.',
+    parameters: {
+      query: { type: 'string', required: true },
+      intent: { type: 'string' },
+    },
+    async execute(args: { query: string, intent?: string }) {
+      return runCli(projectId(), 'search_standards', { query: args.query, intent: args.intent || 'standards' })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'cadfree_read_url',
+    description: 'Fetch a public standards or datasheet page. Private IPs are refused.',
+    parameters: { url: { type: 'string', required: true } },
+    async execute(args: { url: string }) {
+      return runCli(projectId(), 'read_url', { url: args.url })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'cadfree_ask_survey',
+    description: 'Create a structured survey for the Cadfree studio. The Python app waits; this CLI call only creates the form.',
+    parameters: { title: { type: 'string' }, questions: { type: 'array' } },
+    async execute(args: { title?: string, questions: unknown }) {
+      return runCli(projectId(), 'ask_survey', { title: args.title || '', questions: args.questions })
+    },
+  }))
 }

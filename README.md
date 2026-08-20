@@ -12,6 +12,8 @@ The UI is **Carrot’s** glass workspace (same stylesheet, Monaco editor, Plan/A
 - **Agent mode** — writes CadQuery, rebuilds, checks feasibility, can run **MATLAB or GNU Octave** (same contract as Carrot’s academia pack)
 - **You can edit the CAD** — `PARAMS` sliders rebuild without the model; Monaco edits the script directly; Plan mode cannot write
 - **Honest simulation rungs** — first-order always; MATLAB beam theory if installed; Gmsh+CalculiX probed, never faked. See [docs/SIMULATION.md](docs/SIMULATION.md)
+- **Survey before CAD** — the agent must not guess load direction, fasteners, environment, or which ISO/ASTM applies. It opens a form in the studio and waits.
+- **Standards search** — ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, plus manufacturer datasheets. Official bodies rank first. Paywalled PDFs are cited, never invented. Optional Brave Search key in Settings (`pip install -e ".[search]"` for the DuckDuckGo library).
 
 ## Run
 
@@ -28,10 +30,10 @@ python -m cadfree.main
 # open http://127.0.0.1:8181
 ```
 
-1. **Settings** — paste an API key (OpenAI, Anthropic, OpenRouter, DeepSeek, Ollama)
+1. **Settings** — paste an API key (OpenAI, Anthropic, OpenRouter, DeepSeek, Ollama). Optionally a Brave Search key for stronger standards lookup.
 2. **Workshop** — add the machines you actually own
 3. **Projects** — name the spec (load, mass budget)
-4. **Studio** — talk, or drag PARAMS, or edit CadQuery yourself, then Rebuild
+4. **Studio** — talk, answer the survey form when it appears, or drag PARAMS / edit CadQuery yourself, then Rebuild
 
 The server binds to `127.0.0.1:8181` (Carrot’s port on purpose).
 

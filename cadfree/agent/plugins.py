@@ -2,7 +2,9 @@
 
 Everything the agent can do is a plugin: tools, skills, the system prompt
 section. The loop does not special-case CAD, MATLAB, or DFM — it only runs
-whatever is registered. A future `dsh` mount can wrap the same tools.
+whatever is registered. `ask_survey` is the exception: the loop yields the
+form to the studio and waits, because a tool handler cannot talk to the UI.
+A future `dsh` mount can wrap the same tools.
 """
 
 from __future__ import annotations

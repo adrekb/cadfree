@@ -7,7 +7,8 @@ runtime; this package *is* a plugin.
 2. Point a patch file at this folder (or copy `dsh-plugin/` into your harness workspace).
 3. Export `CADFREE_ROOT` (this repo) and `CADFREE_PROJECT_ID`.
 4. The plugin shells `python -m cadfree.cli tool …`, which is the same tool
-   surface the Python agent loop uses.
+   surface the Python agent loop uses (including `search_standards` and
+   `ask_survey`). Survey wait still happens in the Cadfree studio SSE loop.
 
 The Python app at `http://127.0.0.1:8181` is the product UI (Carrot). Use dsh
 when you want Cadfree tools inside an existing harness session.

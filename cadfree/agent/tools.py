@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from cadfree.agent.survey import create_survey, list_pending, normalize_questions
 from cadfree.cad.params import apply_params, extract_params
 from cadfree.cad.runner import build_cadquery, cadquery_status
 from cadfree.catalog import MATERIALS, catalog_payload
@@ -11,6 +12,7 @@ from cadfree.manufacturing.evaluate import evaluate
 from cadfree.manufacturing.mesh import MeshMetrics, load_mesh, metrics_from_mesh
 from cadfree.matlab.engine import find_engine, run_matlab
 from cadfree.paths import project_dir
+from cadfree.search.standards import read_url, search_standards
 from cadfree.simulation.pipeline import probe as sim_probe, simulate
 from cadfree.store.db import db
 
@@ -107,6 +109,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "metrics": json.loads(p["metrics"] or "{}"),
             "feasibility": json.loads(p["feasibility"] or "{}"),
             "status": p["status"],
+            "pending_surveys": list_pending(project_id),
         }
 
     def write_cadquery(source: str) -> dict[str, Any]:
@@ -165,6 +168,24 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             return {"ok": False, "error": f"unknown material {material_id}", "known": list(MATERIALS)}
         return MATERIALS[material_id]
 
+    def search_std(query: str, intent: str = "standards", max_results: int = 8) -> dict[str, Any]:
+        return search_standards(query, intent=intent, max_results=int(max_results or 8))
+
+    def fetch_url(url: str) -> dict[str, Any]:
+        return read_url(url)
+
+    def ask_survey(questions: Any, title: str = "") -> dict[str, Any]:
+        qs = normalize_questions(questions)
+        created = create_survey(project_id, title, qs)
+        return {
+            "ok": True,
+            "survey_id": created["id"],
+            "title": created["title"],
+            "questions": created["questions"],
+            "waiting": True,
+            "note": "The form is on screen. Do not invent answers; wait for the tool result.",
+        }
+
     return {
         "get_workshop": get_workshop,
         "get_project": get_project,
@@ -175,4 +196,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "run_simulation": run_simulation,
         "run_matlab": matlab_run,
         "lookup_material": lookup_material,
+        "search_standards": search_std,
+        "read_url": fetch_url,
+        "ask_survey": ask_survey,
     }

@@ -69,6 +69,15 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS surveys (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                questions TEXT NOT NULL DEFAULT '{}',
+                answers TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
             """
         )
 

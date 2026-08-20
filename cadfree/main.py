@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from cadfree.agent.loop import run_turn
 from cadfree.agent.providers import llm_config
+from cadfree.agent.survey import list_pending, submit_answers
 from cadfree.cad.params import STARTER_BRACKET, apply_params, extract_params
 from cadfree.cad.runner import build_cadquery, cadquery_status
 from cadfree.catalog import catalog_payload, preset_by_id
@@ -41,6 +42,8 @@ class SettingsIn(BaseModel):
     llm_base_url: str | None = None
     ui_theme: str | None = None
     ui_accent: str | None = None
+    search_provider: str | None = None
+    search_api_key: str | None = None
 
 
 class CapabilityIn(BaseModel):
@@ -72,6 +75,10 @@ class ChatIn(BaseModel):
     mode: str = "agent"
 
 
+class SurveyAnswersIn(BaseModel):
+    answers: dict[str, Any]
+
+
 def create_app() -> FastAPI:
     init_db()
     app = FastAPI(title="Cadfree", version="0.1.0")
@@ -98,10 +105,16 @@ def create_app() -> FastAPI:
             cfg["llm_api_key"] = ""
         else:
             cfg["llm_api_key_set"] = False
+        if cfg.get("search_api_key"):
+            cfg["search_api_key_set"] = True
+            cfg["search_api_key"] = ""
+        else:
+            cfg["search_api_key_set"] = False
         cfg.setdefault("ui_theme", "auto")
         cfg.setdefault("ui_accent", "carrot")
         cfg.setdefault("llm_provider", "openai")
         cfg.setdefault("llm_model", "gpt-4.1")
+        cfg.setdefault("search_provider", "auto")
         return cfg
 
     @app.put("/api/config/{key}")
@@ -114,6 +127,8 @@ def create_app() -> FastAPI:
         data = body.model_dump(exclude_none=True)
         if data.get("llm_api_key") == "":
             data.pop("llm_api_key", None)
+        if data.get("search_api_key") == "":
+            data.pop("search_api_key", None)
         for key, value in data.items():
             set_setting(key, value)
         return config()
@@ -200,6 +215,7 @@ def create_app() -> FastAPI:
         item["params"] = extract_params(item.get("cadquery_source") or "")
         item["messages"] = [dict(m) for m in messages]
         item["stl_url"] = f"/api/projects/{project_id}/stl"
+        item["pending_surveys"] = list_pending(project_id)
         return item
 
     @app.put("/api/projects/{project_id}/source")
@@ -277,7 +293,8 @@ def create_app() -> FastAPI:
         prefix = ""
         if body.mode == "plan":
             prefix = (
-                "[Plan mode: do not write CadQuery or run MATLAB. Propose geometry, "
+                "[Plan mode: do not write CadQuery or run MATLAB. You MAY "
+                "ask_survey, search_standards, and read_url. Propose geometry, "
                 "process, and simulation rungs only.]\n\n"
             )
 
@@ -288,7 +305,7 @@ def create_app() -> FastAPI:
                     (_new_id(), project_id, "user", body.content, _now()),
                 )
             assistant_bits: list[str] = []
-            for event in run_turn(project_id, history, prefix + body.content):
+            for event in run_turn(project_id, history, prefix + body.content, mode=body.mode):
                 if event.get("type") == "assistant":
                     assistant_bits.append(event.get("content") or "")
                 yield f"data: {json.dumps(event, default=str)}\n\n"
@@ -301,7 +318,32 @@ def create_app() -> FastAPI:
                     )
             yield "data: {\"type\": \"done\"}\n\n"
 
-        return StreamingResponse(gen(), media_type="text/event-stream")
+        return StreamingResponse(
+            gen(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/api/projects/{project_id}/surveys")
+    def get_surveys(project_id: str) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        return {"surveys": list_pending(project_id)}
+
+    @app.post("/api/projects/{project_id}/survey/{survey_id}")
+    def post_survey(project_id: str, survey_id: str, body: SurveyAnswersIn) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute(
+                "SELECT id, project_id, status FROM surveys WHERE id = ?",
+                (survey_id,),
+            ).fetchone()
+        if not row or row["project_id"] != project_id:
+            raise HTTPException(404, "survey not found")
+        if not submit_answers(survey_id, body.answers):
+            raise HTTPException(400, "could not record answers")
+        return {"ok": True, "survey_id": survey_id, "answers": body.answers}
 
     if WEB_DIR.is_dir():
         app.mount("/css", StaticFiles(directory=WEB_DIR / "css"), name="css")
