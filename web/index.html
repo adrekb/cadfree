@@ -104,6 +104,14 @@
           <button class="mode-opt on" id="mode-act" onclick="setCoderMode('agent')">Agent</button>
         </div>
         <span class="agent-hint" id="mode-hint">Agent can write CadQuery and run MATLAB.</span>
+        <label class="think-label">Think
+          <select id="think-level" onchange="saveThinkingLevel()">
+            <option value="off">Off</option>
+            <option value="low">Low</option>
+            <option value="high" selected>High</option>
+            <option value="max">Max</option>
+          </select>
+        </label>
         <span class="spacer"></span>
         <button class="btn btn-ghost" onclick="rebuildNow()">Rebuild</button>
         <a class="btn btn-ghost" id="stl-download" href="#" download="model.stl">STL</a>
@@ -168,7 +176,7 @@
       <div class="settings-head"><svg class="ico"><use href="#i-key"/></svg><h3>Model</h3></div>
       <p class="muted">Same idea as Carrot: your key, your provider. Stored only on this machine.</p>
       <div class="settings-row">
-        <select id="llm-provider">
+        <select id="llm-provider" onchange="onProviderChange()">
           <option value="openai">OpenAI</option>
           <option value="anthropic">Anthropic</option>
           <option value="openrouter">OpenRouter</option>
@@ -176,7 +184,15 @@
           <option value="ollama">Ollama (local)</option>
           <option value="custom">OpenAI-compatible</option>
         </select>
-        <input id="llm-model" placeholder="model id">
+        <input id="llm-model" placeholder="model id — e.g. deepseek-v4-pro">
+      </div>
+      <div class="settings-row">
+        <select id="llm-thinking" onchange="syncThinkSelect(this.value)">
+          <option value="off">Think: off</option>
+          <option value="low">Think: low</option>
+          <option value="high" selected>Think: high</option>
+          <option value="max">Think: max</option>
+        </select>
       </div>
       <div class="settings-row">
         <input id="llm-key" type="password" placeholder="API key" autocomplete="off">
@@ -184,6 +200,7 @@
         <button class="btn btn-primary" onclick="saveSettings()">Save</button>
       </div>
       <p class="muted small" id="key-status"></p>
+      <p class="muted small" id="think-status"></p>
     </div>
     <div class="settings-card">
       <div class="settings-head"><svg class="ico"><use href="#i-search"/></svg><h3>Standards search</h3></div>
@@ -223,6 +240,8 @@
       <p>The agent must not guess load direction, fasteners, environment, safety factor, or which standard applies. It opens a form in the chat. Answer it; the turn stays paused (SSE keepalives) until you submit.</p>
       <h3>Standards search</h3>
       <p>ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, and manufacturer datasheets are searched on the public web, ranked with standards bodies first. The agent cites the URL. If the document is a paid PDF, it says so and does not invent clause numbers. Optional Brave Search key is in Settings.</p>
+      <h3>DeepSeek V4 Pro</h3>
+      <p>A strong coding/reasoning model does not raise Cadfree’s physics ceiling. With <code>deepseek-v4-pro</code> and Think set to <b>max</b>, the hardest thing it can do well is a <b>single shop-feasible mechanical part or small CadQuery assembly</b>: parametric geometry, fastener/standard lookup, DFM against your machines, mass/load maths, then honest “no, use PETG / a mill / a bigger bed.” It will not design a car, a phone, or a certified pressure vessel. Think <b>high</b> is the DeepSeek default for daily agent work; <b>max</b> is slower and more expensive.</p>
     </div>
   </section>
 </main>

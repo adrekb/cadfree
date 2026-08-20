@@ -6,11 +6,12 @@ from typing import Any, Callable, Iterator
 
 from cadfree.agent.plugins import Tool, all_tools, openai_tools, register, system_prompt_sections
 from cadfree.agent.prompts import SYSTEM_CORE
-from cadfree.agent.providers import LLMError, complete
+from cadfree.agent.providers import LLMError, assistant_history_message, complete, llm_config, normalize_thinking
 from cadfree.agent.survey import wait_for_answers
 from cadfree.agent.tools import make_handlers
 
 MAX_STEPS = 18
+STEP_BUDGET = {"off": 16, "low": 18, "high": 20, "max": 24}
 SURVEY_WAIT_S = 600.0
 PING_EVERY_S = 2.0
 PLAN_BLOCKED = {"write_cadquery", "set_params", "build_model", "run_matlab"}
@@ -239,8 +240,9 @@ def run_turn(
     tools = openai_tools()
     if mode == "plan":
         tools = [t for t in tools if t["function"]["name"] not in PLAN_BLOCKED]
+    steps = STEP_BUDGET.get(normalize_thinking(llm_config().get("thinking")), MAX_STEPS)
 
-    for step in range(MAX_STEPS):
+    for step in range(steps):
         emit({"type": "status", "message": f"Agent step {step + 1}"})
         try:
             reply = complete(messages, tools)
@@ -252,19 +254,16 @@ def run_turn(
 
         content = reply.get("content") or ""
         calls = reply.get("tool_calls") or []
+        reasoning = reply.get("reasoning_content") or ""
+        if reasoning:
+            yield {"type": "thinking", "content": reasoning}
         if content and not calls:
             event = {"type": "assistant", "content": content}
             emit(event)
             yield event
             return
 
-        messages.append(
-            {
-                "role": "assistant",
-                "content": content or "",
-                "tool_calls": calls,
-            }
-        )
+        messages.append(assistant_history_message(reply))
         if content:
             yield {"type": "assistant_partial", "content": content}
 

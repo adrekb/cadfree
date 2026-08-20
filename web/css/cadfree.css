@@ -129,3 +129,14 @@
 .cite-badge.body { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
 .cite-badge.vendor { color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 40%, transparent); }
 #chat-input:disabled, #chat-send:disabled { opacity: 0.55; cursor: not-allowed; }
+.think-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+}
+.think-label select { font-size: 12px; max-width: 88px; }
+.msg.think details { color: var(--muted); font-size: 12.5px; }
+.msg.think summary { cursor: pointer; color: var(--faint); }
+.msg.think pre {
+  white-space: pre-wrap; font-family: var(--mono); font-size: 11.5px;
+  margin: 8px 0 0; max-height: 220px; overflow: auto;
+}

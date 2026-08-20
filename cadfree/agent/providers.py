@@ -7,18 +7,69 @@ import httpx
 
 from cadfree.store.db import get_setting
 
+THINKING_LEVELS = ("off", "low", "high", "max")
+DEFAULT_THINKING = "high"
+MAX_TOKENS = {"off": 8192, "low": 16384, "high": 32768, "max": 65536}
+TIMEOUT_S = {"off": 120.0, "low": 180.0, "high": 300.0, "max": 600.0}
+
 
 class LLMError(RuntimeError):
     pass
 
 
-def llm_config() -> dict[str, Any]:
-    return {
-        "provider": get_setting("llm_provider", "openai"),
-        "api_key": get_setting("llm_api_key", "") or "",
-        "model": get_setting("llm_model", "gpt-4.1"),
-        "base_url": get_setting("llm_base_url", "") or "",
+def normalize_thinking(value: Any) -> str:
+    raw = str(value or DEFAULT_THINKING).strip().lower()
+    aliases = {
+        "none": "off",
+        "disabled": "off",
+        "disable": "off",
+        "minimal": "low",
+        "medium": "high",
+        "xhigh": "max",
+        "extra": "max",
     }
+    raw = aliases.get(raw, raw)
+    return raw if raw in THINKING_LEVELS else DEFAULT_THINKING
+
+
+def llm_config() -> dict[str, Any]:
+    provider = (get_setting("llm_provider", "openai") or "openai").lower()
+    model = get_setting("llm_model", "") or ""
+    if not str(model).strip():
+        model = "deepseek-v4-pro" if provider == "deepseek" else "gpt-4.1"
+    return {
+        "provider": provider,
+        "api_key": get_setting("llm_api_key", "") or "",
+        "model": model,
+        "base_url": get_setting("llm_base_url", "") or "",
+        "thinking": normalize_thinking(get_setting("llm_thinking", DEFAULT_THINKING)),
+    }
+
+
+def uses_deepseek_thinking(cfg: dict[str, Any]) -> bool:
+    provider = (cfg.get("provider") or "").lower()
+    model = (cfg.get("model") or "").lower()
+    return provider == "deepseek" or "deepseek" in model
+
+
+def apply_thinking(body: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+    """Mutate an OpenAI-compatible chat body with thinking / reasoning_effort."""
+    thinking = normalize_thinking(cfg.get("thinking"))
+    provider = (cfg.get("provider") or "").lower()
+    if provider == "ollama":
+        return body
+    if thinking == "off":
+        if uses_deepseek_thinking(cfg):
+            body["thinking"] = {"type": "disabled"}
+        return body
+    body["max_tokens"] = MAX_TOKENS[thinking]
+    if uses_deepseek_thinking(cfg):
+        body["thinking"] = {"type": "enabled"}
+        body["reasoning_effort"] = thinking
+        return body
+    if provider in {"openai", "openrouter", "custom"}:
+        body["reasoning_effort"] = "xhigh" if thinking == "max" else thinking
+    return body
 
 
 def _openai_compatible_url(cfg: dict[str, Any]) -> str:
@@ -47,25 +98,89 @@ def complete(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dic
     return _openai(cfg, messages, tools)
 
 
-def _openai(cfg: dict[str, Any], messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-    headers = {"Content-Type": "application/json"}
-    if cfg.get("api_key"):
-        headers["Authorization"] = f"Bearer {cfg['api_key']}"
+def _text_content(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+        return "".join(parts)
+    return str(value)
+
+
+def parse_choice(choice: dict[str, Any]) -> dict[str, Any]:
+    message = choice.get("message") or choice
+    return {
+        "content": _text_content(message.get("content")),
+        "tool_calls": message.get("tool_calls") or [],
+        "reasoning_content": _text_content(
+            message.get("reasoning_content") or message.get("reasoning")
+        ),
+        "raw": message,
+    }
+
+
+def assistant_history_message(reply: dict[str, Any]) -> dict[str, Any]:
+    """Assistant turn to send back to the API. DeepSeek tool-calls need reasoning_content."""
+    msg: dict[str, Any] = {
+        "role": "assistant",
+        "content": reply.get("content") or "",
+    }
+    calls = reply.get("tool_calls") or []
+    if calls:
+        msg["tool_calls"] = calls
+    reasoning = reply.get("reasoning_content") or ""
+    if reasoning:
+        msg["reasoning_content"] = reasoning
+    return msg
+
+
+def openai_chat_body(
+    cfg: dict[str, Any],
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+) -> dict[str, Any]:
     body: dict[str, Any] = {"model": cfg["model"], "messages": messages}
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"
-    with httpx.Client(timeout=120.0) as client:
-        resp = client.post(_openai_compatible_url(cfg), headers=headers, json=body)
+    return apply_thinking(body, cfg)
+
+
+def _openai(cfg: dict[str, Any], messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+    headers = {"Content-Type": "application/json"}
+    if cfg.get("api_key"):
+        headers["Authorization"] = f"Bearer {cfg['api_key']}"
+    body = openai_chat_body(cfg, messages, tools)
+    timeout = TIMEOUT_S.get(normalize_thinking(cfg.get("thinking")), 120.0)
+    data = _post_json(_openai_compatible_url(cfg), headers, body, timeout, cfg.get("provider") or "openai")
+    return parse_choice(data["choices"][0])
+
+
+def _post_json(
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    timeout: float,
+    provider: str,
+) -> dict[str, Any]:
+    with httpx.Client(timeout=timeout) as client:
+        resp = client.post(url, headers=headers, json=body)
+        if resp.status_code == 400 and ("reasoning_effort" in body or "thinking" in body):
+            stripped = {k: v for k, v in body.items() if k not in {"reasoning_effort", "thinking"}}
+            retry = client.post(url, headers=headers, json=stripped)
+            if retry.status_code < 400:
+                return retry.json()
+            resp = retry
         if resp.status_code >= 400:
-            raise LLMError(f"{cfg['provider']} HTTP {resp.status_code}: {resp.text[:800]}")
-        data = resp.json()
-    choice = data["choices"][0]["message"]
-    return {
-        "content": choice.get("content") or "",
-        "tool_calls": choice.get("tool_calls") or [],
-        "raw": choice,
-    }
+            raise LLMError(f"{provider} HTTP {resp.status_code}: {resp.text[:800]}")
+        return resp.json()
 
 
 def _anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -131,9 +246,10 @@ def _to_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[di
 
 def _anthropic(cfg: dict[str, Any], messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
     system, converted = _to_anthropic_messages(messages)
+    thinking = normalize_thinking(cfg.get("thinking"))
     body: dict[str, Any] = {
         "model": cfg.get("model") or "claude-sonnet-4-5",
-        "max_tokens": 4096,
+        "max_tokens": MAX_TOKENS.get(thinking, 4096),
         "messages": converted,
         "system": system or "You are Cadfree.",
     }
@@ -144,7 +260,8 @@ def _anthropic(cfg: dict[str, Any], messages: list[dict[str, Any]], tools: list[
         "x-api-key": cfg["api_key"],
         "anthropic-version": "2023-06-01",
     }
-    with httpx.Client(timeout=120.0) as client:
+    timeout = TIMEOUT_S.get(thinking, 120.0)
+    with httpx.Client(timeout=timeout) as client:
         resp = client.post("https://api.anthropic.com/v1/messages", headers=headers, json=body)
         if resp.status_code >= 400:
             raise LLMError(f"Anthropic HTTP {resp.status_code}: {resp.text[:800]}")
@@ -165,7 +282,7 @@ def _anthropic(cfg: dict[str, Any], messages: list[dict[str, Any]], tools: list[
                     },
                 }
             )
-    return {"content": text, "tool_calls": tool_calls, "raw": data}
+    return {"content": text, "tool_calls": tool_calls, "reasoning_content": "", "raw": data}
 
 
 def iter_sse(events: Iterator[dict[str, Any]]) -> Iterator[str]:

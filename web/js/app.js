@@ -71,7 +71,11 @@ async function loadDashboard() {
         const label = document.getElementById('engine-label');
         const keyOn = health.llm && health.llm.api_key;
         dot.className = 'dot ' + (keyOn ? 'ok' : 'warn');
-        label.textContent = keyOn ? (health.llm.provider + ' · ' + health.llm.model) : 'No API key';
+        const think = (health.llm && health.llm.thinking) || 'high';
+        syncThinkSelect(think);
+        label.textContent = keyOn
+            ? (health.llm.provider + ' · ' + health.llm.model + ' · think ' + think)
+            : 'No API key';
     } catch (e) {
         document.getElementById('engine-dot').className = 'dot err';
         document.getElementById('engine-label').textContent = e.message;
@@ -290,6 +294,48 @@ function appendMsg(role, text, cls) {
     return div;
 }
 
+function thinkHint(level) {
+    return {
+        off: 'Thinking off. Fastest; weaker CadQuery on hard parts.',
+        low: 'Think low — short chain-of-thought.',
+        high: 'Think high — DeepSeek default for agent work (standards + CadQuery).',
+        max: 'Think max — slowest and spendiest. Best shot at a hard parametric part.',
+    }[level] || '';
+}
+
+function syncThinkSelect(level) {
+    ['llm-thinking', 'think-level'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = level;
+    });
+    const hint = document.getElementById('think-status');
+    if (hint) hint.textContent = thinkHint(level);
+}
+
+function onProviderChange() {
+    const p = document.getElementById('llm-provider').value;
+    const model = document.getElementById('llm-model');
+    if (p === 'deepseek' && !model.value.trim()) model.value = 'deepseek-v4-pro';
+}
+
+async function saveThinkingLevel() {
+    const level = document.getElementById('think-level').value;
+    syncThinkSelect(level);
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ llm_thinking: level }) });
+    loadDashboard();
+}
+
+function appendThinking(text) {
+    if (!text) return;
+    const log = document.getElementById('chat-log');
+    const div = document.createElement('div');
+    div.className = 'msg think';
+    div.innerHTML = '<div class="who">thinking</div><details><summary>chain of thought</summary><pre></pre></details>';
+    div.querySelector('pre').textContent = text;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
 function setComposerLocked(locked) {
     const input = document.getElementById('chat-input');
     const btn = document.getElementById('chat-send');
@@ -458,6 +504,8 @@ async function sendChatText(text) {
                 if (ev.type === 'assistant' || ev.type === 'assistant_partial') {
                     if (!assistant) assistant = appendMsg('cadfree', '');
                     assistant.lastChild.textContent += ev.content || '';
+                } else if (ev.type === 'thinking') {
+                    appendThinking(ev.content || '');
                 } else if (ev.type === 'survey') {
                     renderSurvey(ev);
                 } else if (ev.type === 'survey_answered') {
@@ -498,6 +546,7 @@ async function loadSettings() {
     document.getElementById('llm-model').value = cfg.llm_model || '';
     document.getElementById('llm-base').value = cfg.llm_base_url || '';
     document.getElementById('key-status').textContent = cfg.llm_api_key_set ? 'A key is saved on this machine.' : 'No key saved yet.';
+    syncThinkSelect(cfg.llm_thinking || 'high');
     document.getElementById('search-provider').value = cfg.search_provider || 'auto';
     document.getElementById('search-status').textContent = cfg.search_api_key_set
         ? 'A Brave search key is saved on this machine.'
@@ -510,6 +559,7 @@ async function saveSettings() {
         llm_provider: document.getElementById('llm-provider').value,
         llm_model: document.getElementById('llm-model').value,
         llm_base_url: document.getElementById('llm-base').value,
+        llm_thinking: document.getElementById('llm-thinking').value,
         search_provider: document.getElementById('search-provider').value,
     };
     const key = document.getElementById('llm-key').value.trim();

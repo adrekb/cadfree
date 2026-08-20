@@ -72,6 +72,13 @@ def test_survey_api_and_search_settings(tmp_path, monkeypatch):
     assert saved.json()["search_api_key_set"] is True
     assert saved.json()["search_api_key"] == ""
 
+    think = client.post(
+        "/api/settings",
+        json={"llm_provider": "deepseek", "llm_model": "deepseek-v4-pro", "llm_thinking": "max"},
+    )
+    assert think.json()["llm_thinking"] == "max"
+    assert think.json()["llm_model"] == "deepseek-v4-pro"
+
 
 def test_agent_tools_include_survey_and_search(tmp_path, monkeypatch):
     monkeypatch.setenv("CADFREE_HOME", str(tmp_path))

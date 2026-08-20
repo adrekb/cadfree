@@ -44,6 +44,7 @@ class SettingsIn(BaseModel):
     ui_accent: str | None = None
     search_provider: str | None = None
     search_api_key: str | None = None
+    llm_thinking: str | None = None
 
 
 class CapabilityIn(BaseModel):
@@ -113,7 +114,11 @@ def create_app() -> FastAPI:
         cfg.setdefault("ui_theme", "auto")
         cfg.setdefault("ui_accent", "carrot")
         cfg.setdefault("llm_provider", "openai")
-        cfg.setdefault("llm_model", "gpt-4.1")
+        if not cfg.get("llm_model"):
+            cfg["llm_model"] = (
+                "deepseek-v4-pro" if cfg.get("llm_provider") == "deepseek" else "gpt-4.1"
+            )
+        cfg.setdefault("llm_thinking", "high")
         cfg.setdefault("search_provider", "auto")
         return cfg
 
@@ -130,6 +135,10 @@ def create_app() -> FastAPI:
         if data.get("search_api_key") == "":
             data.pop("search_api_key", None)
         for key, value in data.items():
+            if key == "llm_thinking":
+                from cadfree.agent.providers import normalize_thinking
+
+                value = normalize_thinking(value)
             set_setting(key, value)
         return config()
 
