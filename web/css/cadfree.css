@@ -1,0 +1,94 @@
+/* Cadfree overlays on top of Carrot's stylesheet. */
+.cad-studio {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  min-height: 0;
+}
+.cad-studio.agent-collapsed {
+  grid-template-columns: 1fr 0;
+}
+.cad-main {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+#view-canvas, #view-code-wrap { min-height: 0; position: relative; }
+#cad-canvas { width: 100%; height: 100%; display: block; background: #12141a; }
+.cad-agent {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg2);
+}
+.cad-agent-log { flex: 1; overflow: auto; padding: 14px; }
+.cad-agent-input { padding: 10px 12px 14px; border-top: 1px solid var(--border); }
+.cad-agent-input textarea {
+  width: 100%; min-height: 72px; resize: vertical;
+  font-family: var(--sans);
+}
+.feasibility-bar {
+  grid-column: 1;
+  grid-row: 3;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--card);
+}
+.check-chip {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.check-chip.pass { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+.check-chip.fail { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.check-chip.warn { color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 40%, transparent); }
+.params-strip {
+  display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); background: var(--card);
+}
+.param-field { display: flex; flex-direction: column; gap: 2px; min-width: 110px; }
+.param-field label { font-size: 11px; color: var(--faint); letter-spacing: 0.04em; text-transform: uppercase; }
+.param-field input { width: 100%; }
+.msg { margin: 0 0 12px; }
+.msg .who { font-size: 11px; color: var(--faint); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+.msg.tool { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.machine-card { padding: 14px; }
+.hidden { display: none !important; }
+.view { display: none; height: 100%; }
+.view.active { display: flex; flex-direction: column; }
+#views { flex: 1; min-height: 0; overflow: hidden; }
+#view-studio.active { display: flex; }
+#view-studio .cad-studio { flex: 1; }
+#view-dashboard.active, #view-workshop.active, #view-projects.active,
+#view-settings.active, #view-help.active { overflow: auto; padding: 28px 32px; }
+.dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 18px 0 24px; }
+.kpi { padding: 16px; }
+.kpi .n { font-size: 28px; font-family: var(--serif); }
+.preset-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset-chip {
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.preset-chip:hover { border-color: var(--accent-line); }
+.help-prose { max-width: 72ch; }
+.help-prose h3 { font-family: var(--serif); margin: 1.4em 0 0.4em; }
+.help-prose p, .help-prose li { color: var(--muted); }
+.monaco-host { height: 100%; }
+.theme-swatches { display: flex; flex-wrap: wrap; gap: 8px; }

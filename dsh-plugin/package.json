@@ -1,0 +1,12 @@
+{
+  "name": "@cadfree/dsh-plugin",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin that mounts Cadfree CAD, DFM, MATLAB, and simulation tools.",
+  "type": "module",
+  "main": "src/index.ts",
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  }
+}

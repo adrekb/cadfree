@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Cadfree</title>
+<link rel="icon" type="image/png" href="/assets/logo.png">
+<link rel="stylesheet" href="/css/carrot.css">
+<link rel="stylesheet" href="/css/cadfree.css">
+<script src="/js/theme.js"></script>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <defs>
+    <style>
+      symbol[id^="i-"] { fill: none; stroke: currentColor; stroke-width: 1.7;
+                         stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="M15.8 15.8L20.5 20.5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19.5V5.2"/><path d="M5.6 11.6L12 5.2l6.4 6.4"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6.4 9.4l5.6 5.4 5.6-5.4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6.4" y="6.4" width="11.2" height="11.2" rx="3"/><rect x="10" y="10" width="4" height="4" rx="1.2"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M8.6 7.6L3.6 12l5 4.4M15.4 7.6l5 4.4-5 4.4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M12 2.6l1.5 2.6a7.6 7.6 0 0 1 2 .8l2.9-.6 1.6 2.8-1.9 2.3a7.6 7.6 0 0 1 0 2.2l1.9 2.3-1.6 2.8-2.9-.6a7.6 7.6 0 0 1-2 .8L12 21.4l-1.5-2.6a7.6 7.6 0 0 1-2-.8l-2.9.6-1.6-2.8 1.9-2.3a7.6 7.6 0 0 1 0-2.2L4 9l1.6-2.8 2.9.6a7.6 7.6 0 0 1 2-.8z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.4" y="3.4" width="7.2" height="7.2" rx="2.2"/><rect x="13.4" y="3.4" width="7.2" height="7.2" rx="2.2"/><rect x="3.4" y="13.4" width="7.2" height="7.2" rx="2.2"/><rect x="13.4" y="13.4" width="7.2" height="7.2" rx="2.2"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.6 13.6a2.8 2.8 0 0 1-2.8 2.8H8.4L4 20.4V6a2.8 2.8 0 0 1 2.8-2.8h11a2.8 2.8 0 0 1 2.8 2.8z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20.8 18.6a2.4 2.4 0 0 1-2.4 2.4H5.6a2.4 2.4 0 0 1-2.4-2.4V5.4A2.4 2.4 0 0 1 5.6 3h3.9l2.1 3h6.8a2.4 2.4 0 0 1 2.4 2.4z"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="12" r="3.6"/><path d="M11.1 12h9.4M17.6 12v3.2"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.85.83c0 1.67-2.45 2.5-2.45 2.5"/><circle cx="12" cy="16.6" r="0.95" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-robot" viewBox="0 0 24 24"><rect x="4" y="7.6" width="16" height="11.4" rx="3.2"/><path d="M12 3.4v4.2"/><circle cx="9.2" cy="13" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="13" r="1.15" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9.6 2.8v6L4.4 17.6a2.4 2.4 0 0 0 2.1 3.6h11a2.4 2.4 0 0 0 2.1-3.6L14.4 8.8v-6"/><path d="M8.2 2.8h7.6"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3.2a8.8 8.8 0 0 0 0 17.6c1.4 0 2.3-.85 2.3-1.95 0-.55-.2-1-.55-1.35-.35-.35-.55-.8-.55-1.3 0-1.05.85-1.85 1.9-1.85h1.6a4.1 4.1 0 0 0 4.1-4.1C20.8 6.35 16.9 3.2 12 3.2z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.4v11.4"/><path d="M7.4 10.4l4.6 4.4 4.6-4.4"/><path d="M4 17.4v1.6a2.4 2.4 0 0 0 2.4 2.4h11.2a2.4 2.4 0 0 0 2.4-2.4v-1.6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3.6 6.4h16.8"/><path d="M8.4 6.4V4.8a2 2 0 0 1 2-2h3.2a2 2 0 0 1 2 2v1.6"/><path d="M18.4 6.4v12.4a2.4 2.4 0 0 1-2.4 2.4H8a2.4 2.4 0 0 1-2.4-2.4V6.4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" stroke-width="2"><path d="M4.8 12.6l4.6 4.4L19.2 7"/></symbol>
+</svg>
+
+<header id="menubar">
+  <div class="brand" onclick="switchTab('dashboard')" style="cursor:pointer">
+    <span class="brand-mark"><span class="logo-mask"></span></span>
+    <span class="brand-name">CADFREE</span>
+    <span class="brand-sub">CURSOR FOR THE SHOP</span>
+  </div>
+  <div class="menubar-right">
+    <span id="engine-status">
+      <span id="engine-dot" class="dot"></span>
+      <span id="engine-label">Connecting</span>
+    </span>
+  </div>
+</header>
+
+<div id="app-body">
+<nav class="app-nav">
+  <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
+    <svg class="ico"><use href="#i-grid"/></svg><span class="nav-label">Dashboard</span>
+  </button>
+  <button class="nav-item" data-tab="studio" onclick="switchTab('studio')">
+    <svg class="ico"><use href="#i-terminal"/></svg><span class="nav-label">Studio</span>
+  </button>
+  <button class="nav-item" data-tab="workshop" onclick="switchTab('workshop')">
+    <svg class="ico"><use href="#i-folder"/></svg><span class="nav-label">Workshop</span>
+  </button>
+  <button class="nav-item" data-tab="projects" onclick="switchTab('projects')">
+    <svg class="ico"><use href="#i-chat"/></svg><span class="nav-label">Projects</span>
+  </button>
+  <button class="nav-item" data-tab="settings" onclick="switchTab('settings')">
+    <svg class="ico"><use href="#i-gear"/></svg><span class="nav-label">Settings</span>
+  </button>
+  <div class="nav-divider"></div>
+  <button class="nav-item" data-tab="help" onclick="switchTab('help')">
+    <svg class="ico"><use href="#i-help"/></svg><span class="nav-label">Simulation</span>
+  </button>
+</nav>
+
+<main id="views">
+  <section id="view-dashboard" class="view active">
+    <div class="dash-head">
+      <div>
+        <h1>Make only what you can actually make.</h1>
+        <p class="dash-sub">Text-to-CAD that refuses parts your printer, mill, laser, or mold cannot produce.</p>
+      </div>
+    </div>
+    <div class="dash-kpis">
+      <div class="settings-card kpi"><div class="n" id="kpi-machines">0</div><div class="muted">machines in the shop</div></div>
+      <div class="settings-card kpi"><div class="n" id="kpi-projects">0</div><div class="muted">projects</div></div>
+      <div class="settings-card kpi"><div class="n" id="kpi-cad">—</div><div class="muted">CadQuery</div></div>
+      <div class="settings-card kpi"><div class="n" id="kpi-matlab">—</div><div class="muted">MATLAB / Octave</div></div>
+    </div>
+    <p class="muted">Setup: add the machines you own, paste a model API key, then new project → “bracket, 50 lb, 100 g of filament.”</p>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="switchTab('workshop')">Add a machine</button>
+      <button class="btn btn-ghost" onclick="switchTab('projects')">New project</button>
+    </div>
+  </section>
+
+  <section id="view-studio" class="view">
+    <div class="cad-studio" id="cad-studio">
+      <div class="agent-bar" style="grid-column:1;grid-row:1">
+        <div class="mode-switch" role="group">
+          <button class="mode-opt" id="mode-plan" onclick="setCoderMode('plan')">Plan</button>
+          <button class="mode-opt on" id="mode-act" onclick="setCoderMode('agent')">Agent</button>
+        </div>
+        <span class="agent-hint" id="mode-hint">Agent can write CadQuery and run MATLAB.</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" onclick="rebuildNow()">Rebuild</button>
+        <a class="btn btn-ghost" id="stl-download" href="#" download="model.stl">STL</a>
+        <button class="btn btn-primary" onclick="toggleAgentSide()">Agent</button>
+      </div>
+      <div class="cad-main">
+        <div id="view-canvas"><canvas id="cad-canvas"></canvas></div>
+        <div id="view-code-wrap">
+          <div class="params-strip" id="params-strip"></div>
+          <div id="code-editor-host" class="monaco-host"></div>
+        </div>
+      </div>
+      <div class="feasibility-bar" id="feasibility-bar">
+        <span class="muted">Rebuild to score manufacturability.</span>
+      </div>
+      <aside class="cad-agent" id="cad-agent">
+        <div class="cad-agent-log" id="chat-log"></div>
+        <div class="cad-agent-input">
+          <textarea id="chat-input" placeholder="I want a bracket that holds 50 lb and uses at most 100 g of filament…"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px">
+            <button class="btn btn-primary" onclick="sendChat()">
+              <svg class="ico"><use href="#i-send"/></svg> Send
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="view-workshop" class="view">
+    <div class="page-head"><h2>Workshop</h2>
+      <p class="muted">What you actually own. Cadfree will not design something this shop cannot make.</p>
+    </div>
+    <div class="settings-card" style="margin:16px 0">
+      <div class="settings-head"><h3>Add a machine</h3></div>
+      <p class="muted">Pick a preset or a process kind.</p>
+      <div class="preset-grid" id="preset-grid"></div>
+    </div>
+    <div class="shop-grid" id="shop-grid"></div>
+  </section>
+
+  <section id="view-projects" class="view">
+    <div class="page-head"><h2>Projects</h2></div>
+    <div class="settings-card" style="margin:16px 0;max-width:640px">
+      <div class="settings-head"><h3>New project</h3></div>
+      <div class="settings-row"><input id="np-name" placeholder="Name — e.g. shelf bracket"></div>
+      <div class="settings-row"><textarea id="np-spec" placeholder="I want a bracket that can support 50 pounds and use no more than 100 g of filament."></textarea></div>
+      <div class="settings-row">
+        <input id="np-load" type="number" placeholder="Load (lbf)" value="50">
+        <input id="np-mass" type="number" placeholder="Max mass (g)" value="100">
+        <input id="np-sf" type="number" placeholder="Safety factor" value="2">
+      </div>
+      <div class="settings-row" id="np-caps"></div>
+      <button class="btn btn-primary" onclick="createProject()">Create &amp; open studio</button>
+    </div>
+    <div id="project-list"></div>
+  </section>
+
+  <section id="view-settings" class="view">
+    <div class="page-head"><h2>Settings</h2></div>
+    <div class="settings-card">
+      <div class="settings-head"><svg class="ico"><use href="#i-key"/></svg><h3>Model</h3></div>
+      <p class="muted">Same idea as Carrot: your key, your provider. Stored only on this machine.</p>
+      <div class="settings-row">
+        <select id="llm-provider">
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="ollama">Ollama (local)</option>
+          <option value="custom">OpenAI-compatible</option>
+        </select>
+        <input id="llm-model" placeholder="model id">
+      </div>
+      <div class="settings-row">
+        <input id="llm-key" type="password" placeholder="API key" autocomplete="off">
+        <input id="llm-base" placeholder="Base URL (optional)">
+        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+      </div>
+      <p class="muted small" id="key-status"></p>
+    </div>
+    <div class="settings-card">
+      <div class="settings-head"><svg class="ico"><use href="#i-palette"/></svg><h3>Appearance</h3></div>
+      <p class="muted">Carrot theme engine — light/dark plus the accent palette.</p>
+      <div id="theme-modes" class="theme-swatches"></div>
+      <div id="theme-accents" class="theme-swatches" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <section id="view-help" class="view">
+    <div class="page-head"><h2>How the physics works</h2></div>
+    <div class="help-prose">
+      <p>Text-to-CAD already exists. The gap is: <i>can this be made on your machines, and will it actually do the job?</i> Cadfree answers that in rungs, and tells you which rung ran.</p>
+      <h3>Rung 0 — first-order (always on)</h3>
+      <p>Bounding-box cantilever, printed knockdowns, mass from volume × density × infill. Catches “50 lb on 8 g of PLA” in milliseconds. Not FEA.</p>
+      <h3>Rung 1 — MATLAB / Octave (Agent mode)</h3>
+      <p>If MATLAB or GNU Octave is installed, the agent can run .m scripts: beam theory, deflection, buckling, custom load cases, plots. Octave is accepted wherever MATLAB is asked for — same policy as Carrot’s academia pack.</p>
+      <h3>Rung 2 — mesh FEA</h3>
+      <p>The production path is CadQuery → STEP/STL → <b>Gmsh</b> tetrahedral mesh → <b>CalculiX (ccx)</b> linear static → von Mises. That is the open stack (PyCCX, FreeCAD FEM, CadQuery’s gmsh plugin). Cadfree probes for <code>gmsh</code> and <code>ccx</code> and will not pretend FEA ran if they are missing.</p>
+      <h3>You can still edit the CAD</h3>
+      <p>The studio is not chat-only. PARAMS sliders rebuild without the model. The Monaco editor (Carrot’s code tab) lets you rewrite CadQuery yourself, then Rebuild. Plan mode proposes; Agent mode is allowed to write files and run MATLAB.</p>
+    </div>
+  </section>
+</main>
+</div>
+
+<script src="/vendor/monaco.js"></script>
+<script src="/js/app.js"></script>
+<script type="module" src="/js/viewer.js"></script>
+</body>
+</html>
