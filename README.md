@@ -14,7 +14,9 @@ The UI is **Carrot’s** glass workspace (same stylesheet, Monaco editor, Plan/A
 - **Honest simulation rungs** — first-order always; MATLAB beam theory if installed; Gmsh+CalculiX probed, never faked. See [docs/SIMULATION.md](docs/SIMULATION.md)
 - **Survey before CAD** — the agent must not guess load direction, fasteners, environment, or which ISO/ASTM applies. It opens a form in the studio and waits.
 - **Standards search** — ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, plus manufacturer datasheets. Official bodies rank first. Paywalled PDFs are cited, never invented. Optional Brave Search key in Settings (`pip install -e ".[search]"` for the DuckDuckGo library).
-- **Adjustable thinking** — DeepSeek V4 Pro (`deepseek-v4-pro`) supports Think **off / low / high / max** on the API (`reasoning_effort` + `thinking`). High is the default. Max is slower and costs more reasoning tokens. The same control sends `reasoning_effort` to OpenAI-compatible endpoints that accept it.
+- **Adjustable thinking** — DeepSeek V4 Pro supports Think **off / low / high / max**. High is the default. DeepSeek is **not vision-native**.
+- **Vision** — OpenAI, Anthropic, Gemini, and OpenRouter vision models can read drawings/photos attached in chat. Gemini default: `gemini-2.5-flash`.
+- **Assemblies** — unique CadQuery parts + placed instances with linear/grid/circular patterns (cap 250). Fasteners are BOM-only. Not one giant script.
 
 ## Run
 

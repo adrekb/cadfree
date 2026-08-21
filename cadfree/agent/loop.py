@@ -11,10 +11,18 @@ from cadfree.agent.survey import wait_for_answers
 from cadfree.agent.tools import make_handlers
 
 MAX_STEPS = 18
-STEP_BUDGET = {"off": 16, "low": 18, "high": 20, "max": 24}
+STEP_BUDGET = {"off": 18, "low": 20, "high": 24, "max": 32}
 SURVEY_WAIT_S = 600.0
 PING_EVERY_S = 2.0
-PLAN_BLOCKED = {"write_cadquery", "set_params", "build_model", "run_matlab"}
+PLAN_BLOCKED = {
+    "write_cadquery",
+    "set_params",
+    "build_model",
+    "run_matlab",
+    "upsert_part",
+    "place_instance",
+    "remove_instance",
+}
 
 
 def _bind_tools(project_id: str) -> None:
@@ -28,7 +36,7 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "get_project",
-            "Read the current project's spec, constraints, CadQuery source, last feasibility, and pending surveys.",
+            "Read the current project's spec, constraints, CadQuery source, assembly (parts/instances/BOM), last feasibility, and pending surveys.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             handlers["get_project"],
         ),
@@ -67,6 +75,70 @@ def _bind_tools(project_id: str) -> None:
             handlers["ask_survey"],
         ),
         Tool(
+            "list_assembly",
+            "Parts, instances, expanded count, and BOM. Unique parts + patterns, not one script per copy.",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            handlers["list_assembly"],
+        ),
+        Tool(
+            "upsert_part",
+            "Create or update a unique part. kind: part | purchased | fastener. Purchased/fastener need no CadQuery.",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "source": {"type": "string"},
+                    "part_id": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["part", "purchased", "fastener"]},
+                    "material_id": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+            handlers["upsert_part"],
+            mutating=True,
+        ),
+        Tool(
+            "place_instance",
+            "Place a part in the assembly. loc is mm + degrees {x,y,z,rx,ry,rz}. "
+            "pattern: {kind: none|linear|grid|circular, count, dx, dy, dz, nx, ny, radius, axis}. "
+            "This is how you get large assemblies (e.g. 8×6 grid of a unique bracket).",
+            {
+                "type": "object",
+                "properties": {
+                    "part_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "loc": {"type": "object"},
+                    "pattern": {"type": "object"},
+                    "parent_id": {"type": "string"},
+                    "instance_id": {"type": "string"},
+                },
+                "required": ["part_id"],
+            },
+            handlers["place_instance"],
+            mutating=True,
+        ),
+        Tool(
+            "remove_instance",
+            "Remove a placed instance (and its pattern) from the assembly.",
+            {
+                "type": "object",
+                "properties": {"instance_id": {"type": "string"}},
+                "required": ["instance_id"],
+            },
+            handlers["remove_instance"],
+            mutating=True,
+        ),
+        Tool(
+            "set_active_part",
+            "Select which unique part the editor and write_cadquery target.",
+            {
+                "type": "object",
+                "properties": {"part_id": {"type": "string"}},
+                "required": ["part_id"],
+            },
+            handlers["set_active_part"],
+        ),
+        Tool(
             "search_standards",
             "Web search for ISO/ASTM/ASME/DIN/SAE/MIL-STD/NAS/IPC documents and manufacturer datasheets. "
             "Ranks standards bodies first. Cite URLs; do not invent paywalled clauses.",
@@ -97,10 +169,13 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "write_cadquery",
-            "Replace the project's CadQuery script. Must assign `result` and keep a PARAMS dict.",
+            "Replace a part's CadQuery script. Must assign `result` and keep a PARAMS dict. Optional part_id (defaults to the active part). Do not copy-paste 40 bodies — use place_instance patterns.",
             {
                 "type": "object",
-                "properties": {"source": {"type": "string"}},
+                "properties": {
+                    "source": {"type": "string"},
+                    "part_id": {"type": "string"},
+                },
                 "required": ["source"],
             },
             handlers["write_cadquery"],
@@ -111,7 +186,10 @@ def _bind_tools(project_id: str) -> None:
             "Patch PARAMS in the CadQuery script without rewriting topology.",
             {
                 "type": "object",
-                "properties": {"params": {"type": "object"}},
+                "properties": {
+                    "params": {"type": "object"},
+                    "part_id": {"type": "string"},
+                },
                 "required": ["params"],
             },
             handlers["set_params"],
@@ -119,8 +197,11 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "build_model",
-            "Run CadQuery, export STL, return volume/bbox/overhang metrics.",
-            {"type": "object", "properties": {}, "additionalProperties": False},
+            "Run CadQuery for a part (optional part_id), export STL, then compose the assembly preview.",
+            {
+                "type": "object",
+                "properties": {"part_id": {"type": "string"}},
+            },
             handlers["build_model"],
             mutating=True,
         ),
@@ -220,6 +301,7 @@ def run_turn(
     user_text: str,
     *,
     mode: str = "agent",
+    images: list[dict[str, Any]] | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """ReAct loop. Plugins supply tools; this file only drives steps.
@@ -232,10 +314,13 @@ def run_turn(
     _bind_tools(project_id)
 
     emit = on_event or (lambda _e: None)
+    user_msg: dict[str, Any] = {"role": "user", "content": user_text}
+    if images:
+        user_msg["images"] = images
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt_sections()},
         *history,
-        {"role": "user", "content": user_text},
+        user_msg,
     ]
     tools = openai_tools()
     if mode == "plan":

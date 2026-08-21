@@ -120,6 +120,7 @@
       <div class="cad-main">
         <div id="view-canvas"><canvas id="cad-canvas"></canvas></div>
         <div id="view-code-wrap">
+          <div class="parts-strip" id="parts-strip"></div>
           <div class="params-strip" id="params-strip"></div>
           <div id="code-editor-host" class="monaco-host"></div>
         </div>
@@ -130,8 +131,13 @@
       <aside class="cad-agent" id="cad-agent">
         <div class="cad-agent-log" id="chat-log"></div>
         <div class="cad-agent-input">
-          <textarea id="chat-input" placeholder="I want a bracket that holds 50 lb and uses at most 100 g of filament…"></textarea>
-          <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <textarea id="chat-input" placeholder="I want a bracket that holds 50 lb…  Drop a drawing or photo."></textarea>
+          <div id="attach-preview" class="attach-preview"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+            <label class="btn btn-ghost" style="cursor:pointer">
+              <input id="chat-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onchange="uploadChatFiles(event)">
+              Attach drawing
+            </label>
             <button class="btn btn-primary" id="chat-send" onclick="sendChat()">
               <svg class="ico"><use href="#i-send"/></svg> Send
             </button>
@@ -177,10 +183,11 @@
       <p class="muted">Same idea as Carrot: your key, your provider. Stored only on this machine.</p>
       <div class="settings-row">
         <select id="llm-provider" onchange="onProviderChange()">
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI (vision)</option>
+          <option value="anthropic">Anthropic (vision)</option>
+          <option value="gemini">Gemini (vision)</option>
+          <option value="openrouter">OpenRouter (pick a vision model)</option>
+          <option value="deepseek">DeepSeek (text only)</option>
           <option value="ollama">Ollama (local)</option>
           <option value="custom">OpenAI-compatible</option>
         </select>
@@ -241,7 +248,9 @@
       <h3>Standards search</h3>
       <p>ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, and manufacturer datasheets are searched on the public web, ranked with standards bodies first. The agent cites the URL. If the document is a paid PDF, it says so and does not invent clause numbers. Optional Brave Search key is in Settings.</p>
       <h3>DeepSeek V4 Pro</h3>
-      <p>A strong coding/reasoning model does not raise Cadfree’s physics ceiling. With <code>deepseek-v4-pro</code> and Think set to <b>max</b>, the hardest thing it can do well is a <b>single shop-feasible mechanical part or small CadQuery assembly</b>: parametric geometry, fastener/standard lookup, DFM against your machines, mass/load maths, then honest “no, use PETG / a mill / a bigger bed.” It will not design a car, a phone, or a certified pressure vessel. Think <b>high</b> is the DeepSeek default for daily agent work; <b>max</b> is slower and more expensive.</p>
+      <p>DeepSeek is text-only — it cannot read a drawing or a photo of a part. For that, use <b>OpenAI, Anthropic, Gemini, or an OpenRouter vision model</b> and attach the image in chat. Thinking levels still work on DeepSeek for text agent work.</p>
+      <h3>Large assemblies</h3>
+      <p>Not one giant CadQuery file. Unique parts in the tree, then instances with a linear / grid / circular pattern (cap 250 expanded copies). Fasteners are BOM lines with no solid. Rebuild composes an assembly STL from placed parts.</p>
     </div>
   </section>
 </main>

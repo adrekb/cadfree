@@ -5,6 +5,19 @@ from pathlib import Path
 from typing import Any
 
 from cadfree.agent.survey import create_survey, list_pending, normalize_questions
+from cadfree.cad.assembly import (
+    assembly_snapshot,
+    compose_assembly_stl,
+    ensure_default_part,
+    get_part,
+    part_dir,
+    place_instance,
+    remove_instance,
+    save_part_metrics,
+    save_part_source,
+    set_active_part,
+    upsert_part,
+)
 from cadfree.cad.params import apply_params, extract_params
 from cadfree.cad.runner import build_cadquery, cadquery_status
 from cadfree.catalog import MATERIALS, catalog_payload
@@ -66,12 +79,8 @@ def _metrics(project: dict[str, Any], work: Path) -> MeshMetrics | None:
     )
 
 
-def _save_source(project_id: str, source: str) -> None:
-    with db() as conn:
-        conn.execute(
-            "UPDATE projects SET cadquery_source = ?, updated_at = datetime('now') WHERE id = ?",
-            (source, project_id),
-        )
+def _save_source(project_id: str, source: str, part_id: str | None = None) -> dict[str, Any]:
+    return save_part_source(project_id, part_id, source)
 
 
 def _save_build(project_id: str, built: dict[str, Any], feasibility: dict[str, Any] | None = None) -> None:
@@ -98,50 +107,81 @@ def make_handlers(project_id: str) -> dict[str, Any]:
 
     def get_project() -> dict[str, Any]:
         p = _row(project_id)
+        ensure_default_part(project_id, p.get("cadquery_source") or "")
+        snap = assembly_snapshot(project_id)
+        active = get_part(project_id, None)
         return {
             "id": p["id"],
             "name": p["name"],
             "spec_text": p["spec_text"],
             "constraints": json.loads(p["constraints"] or "{}"),
             "capability_ids": json.loads(p["capability_ids"] or "[]"),
-            "cadquery_source": p["cadquery_source"],
-            "params": extract_params(p["cadquery_source"] or ""),
+            "cadquery_source": active.get("cadquery_source") or p["cadquery_source"],
+            "params": extract_params(active.get("cadquery_source") or p["cadquery_source"] or ""),
             "metrics": json.loads(p["metrics"] or "{}"),
             "feasibility": json.loads(p["feasibility"] or "{}"),
             "status": p["status"],
             "pending_surveys": list_pending(project_id),
+            "assembly": snap,
+            "active_part_id": snap.get("active_part_id"),
         }
 
-    def write_cadquery(source: str) -> dict[str, Any]:
-        _save_source(project_id, source)
-        return {"ok": True, "params": extract_params(source), "chars": len(source)}
+    def write_cadquery(source: str, part_id: str | None = None) -> dict[str, Any]:
+        part = _save_source(project_id, source, part_id)
+        return {"ok": True, "params": extract_params(source), "chars": len(source), "part_id": part["id"], "part": part["name"]}
 
-    def set_params(params: dict[str, Any]) -> dict[str, Any]:
-        p = _row(project_id)
-        source = apply_params(p["cadquery_source"] or "", params)
-        _save_source(project_id, source)
-        return {"ok": True, "params": extract_params(source)}
+    def set_params(params: dict[str, Any], part_id: str | None = None) -> dict[str, Any]:
+        part = get_part(project_id, part_id)
+        source = apply_params(part.get("cadquery_source") or "", params)
+        saved = _save_source(project_id, source, part["id"])
+        return {"ok": True, "params": extract_params(source), "part_id": saved["id"]}
 
-    def build_model() -> dict[str, Any]:
-        p = _row(project_id)
-        source = p["cadquery_source"]
+    def build_model(part_id: str | None = None) -> dict[str, Any]:
+        ensure_default_part(project_id)
+        part = get_part(project_id, part_id)
+        source = part.get("cadquery_source") or ""
+        if part.get("kind") in {"purchased", "fastener"}:
+            return {"ok": True, "purchased": True, "part_id": part["id"], "note": "Purchased/fastener — no CadQuery solid."}
         if not source.strip():
-            return {"ok": False, "error": "No CadQuery source yet. Call write_cadquery first."}
-        built = build_cadquery(source, project_dir(project_id))
+            return {"ok": False, "error": "No CadQuery source yet. Call write_cadquery or upsert_part first."}
+        built = build_cadquery(source, part_dir(project_id, part["id"]))
         if built.get("ok"):
+            save_part_metrics(project_id, part["id"], built.get("metrics") or {})
             _save_build(project_id, built)
-        return {k: v for k, v in built.items() if k != "stl_path"}
+            composed = compose_assembly_stl(project_id)
+            built["assembly"] = {k: v for k, v in composed.items() if k != "stl_path"}
+        out = {k: v for k, v in built.items() if k != "stl_path"}
+        out["part_id"] = part["id"]
+        return out
 
     def check_feasibility() -> dict[str, Any]:
         p = _row(project_id)
-        work = project_dir(project_id)
-        metrics = _metrics(p, work)
-        if metrics is None:
-            return {"ok": False, "error": "Build the model before checking feasibility."}
+        ensure_default_part(project_id, p.get("cadquery_source") or "")
+        snap = assembly_snapshot(project_id)
         caps = _caps(json.loads(p["capability_ids"] or "[]"))
         constraints = json.loads(p["constraints"] or "{}")
+        work = project_dir(project_id)
+        active = get_part(project_id, None)
+        stl = part_dir(project_id, active["id"]) / "model.stl"
+        if not stl.is_file():
+            stl = work / "model.stl"
+        metrics = _metrics(p, stl.parent) if stl.is_file() else _metrics(p, work)
+        if metrics is None:
+            return {"ok": False, "error": "Build the model before checking feasibility."}
         report = evaluate(metrics, caps, constraints)
         data = report.to_dict()
+        if snap.get("expanded_count", 1) > 1:
+            qty = next((b["qty"] for b in snap.get("bom") or [] if b["part_id"] == active["id"]), 1)
+            mass = dict(data.get("mass") or {})
+            if mass.get("mass_g") is not None:
+                mass["unit_mass_g"] = mass["mass_g"]
+                mass["mass_g"] = float(mass["mass_g"]) * qty
+                mass["qty"] = qty
+                data["mass"] = mass
+            data["assembly"] = {"expanded": snap["expanded_count"], "bom": snap.get("bom")}
+            data["assumptions"] = list(data.get("assumptions") or []) + [
+                "Assembly mass is unique-part mass × instance count. Mate/joint strength is not FEA."
+            ]
         _save_build(project_id, {"metrics": metrics.to_dict()}, data)
         return data
 
@@ -186,6 +226,41 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "note": "The form is on screen. Do not invent answers; wait for the tool result.",
         }
 
+    def list_assy() -> dict[str, Any]:
+        p = _row(project_id)
+        ensure_default_part(project_id, p.get("cadquery_source") or "")
+        return assembly_snapshot(project_id)
+
+    def upsert(name: str, source: str = "", part_id: str | None = None, kind: str = "part", material_id: str | None = None) -> dict[str, Any]:
+        part = upsert_part(
+            project_id, name=name, source=source, part_id=part_id, kind=kind, material_id=material_id
+        )
+        return {"ok": True, "part": part}
+
+    def place(part_id: str, name: str = "", loc: dict[str, Any] | None = None, pattern: dict[str, Any] | None = None, parent_id: str | None = None, instance_id: str | None = None) -> dict[str, Any]:
+        try:
+            inst = place_instance(
+                project_id,
+                part_id,
+                name=name,
+                loc=loc,
+                pattern=pattern,
+                parent_id=parent_id,
+                instance_id=instance_id,
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        snap = assembly_snapshot(project_id)
+        return {"ok": True, "instance": inst, "expanded_count": snap["expanded_count"], "bom": snap["bom"]}
+
+    def drop_instance(instance_id: str) -> dict[str, Any]:
+        ok = remove_instance(project_id, instance_id)
+        return {"ok": ok}
+
+    def activate_part(part_id: str) -> dict[str, Any]:
+        part = set_active_part(project_id, part_id)
+        return {"ok": True, "part": part}
+
     return {
         "get_workshop": get_workshop,
         "get_project": get_project,
@@ -199,4 +274,9 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "search_standards": search_std,
         "read_url": fetch_url,
         "ask_survey": ask_survey,
+        "list_assembly": list_assy,
+        "upsert_part": upsert,
+        "place_instance": place,
+        "remove_instance": drop_instance,
+        "set_active_part": activate_part,
     }

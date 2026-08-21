@@ -33,6 +33,7 @@ def test_workshop_and_project(tmp_path, monkeypatch):
     assert "width_mm" in project.json()["params"]
     assert client.get("/").status_code == 200
     assert project.json()["pending_surveys"] == []
+    assert project.json()["assembly"]["parts"]
 
 
 def test_survey_api_and_search_settings(tmp_path, monkeypatch):
@@ -91,4 +92,4 @@ def test_agent_tools_include_survey_and_search(tmp_path, monkeypatch):
     plug._PLUGINS.clear()
     _bind_tools("p-missing")
     names = set(all_tools())
-    assert {"ask_survey", "search_standards", "read_url"} <= names
+    assert {"ask_survey", "search_standards", "read_url", "list_assembly", "place_instance"} <= names

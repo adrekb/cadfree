@@ -6,6 +6,8 @@ let catalog = null;
 let paramTimer = null;
 let surveyPending = false;
 let agentStreaming = false;
+let pendingAttachments = [];
+let currentVision = true;
 
 function escHtml(str) {
     const d = document.createElement('div');
@@ -73,8 +75,9 @@ async function loadDashboard() {
         dot.className = 'dot ' + (keyOn ? 'ok' : 'warn');
         const think = (health.llm && health.llm.thinking) || 'high';
         syncThinkSelect(think);
+        currentVision = !!(health.llm && health.llm.vision);
         label.textContent = keyOn
-            ? (health.llm.provider + ' · ' + health.llm.model + ' · think ' + think)
+            ? (health.llm.provider + ' · ' + health.llm.model + ' · think ' + think + (currentVision ? ' · vision' : ''))
             : 'No API key';
     } catch (e) {
         document.getElementById('engine-dot').className = 'dot err';
@@ -195,6 +198,7 @@ async function loadStudio(id) {
     ensureMonaco();
     if (monacoEditor) monacoEditor.setValue(p.cadquery_source || '');
     renderParams(p.params || {});
+    renderParts(p.assembly || {});
     renderFeasibility(p.feasibility || {});
     renderMessages(p.messages || []);
     (p.pending_surveys || []).forEach(s => renderSurvey({
@@ -206,7 +210,64 @@ async function loadStudio(id) {
     if (window.cadfreeViewer) window.cadfreeViewer.load('/api/projects/' + id + '/stl?t=' + Date.now());
 }
 
-function renderParams(params) {
+function renderParts(assembly) {
+    const host = document.getElementById('parts-strip');
+    if (!host) return;
+    const parts = (assembly && assembly.parts) || [];
+    const active = assembly && assembly.active_part_id;
+    const bom = (assembly && assembly.bom) || [];
+    const n = assembly && assembly.expanded_count;
+    if (!parts.length) {
+        host.innerHTML = '<span class="muted">One unique part so far. Assemblies are extra parts + patterns, not one giant script.</span>';
+        return;
+    }
+    const chips = parts.map(p =>
+        `<button class="part-chip ${p.id === active ? 'on' : ''}" onclick="selectPart('${p.id}')">${escHtml(p.name)}</button>`
+    ).join('');
+    const bomTxt = n > 1 ? `<span class="muted small">${n} instances · ${bom.map(b => b.qty + '× ' + b.name).join(', ')}</span>` : '';
+    host.innerHTML = chips + bomTxt;
+}
+
+async function selectPart(id) {
+    if (!currentProjectId) return;
+    const res = await api('/api/projects/' + currentProjectId + '/parts/' + id + '/activate', { method: 'POST' });
+    if (monacoEditor) monacoEditor.setValue((res.part && res.part.cadquery_source) || '');
+    renderParams(res.params || {});
+    const p = await api('/api/projects/' + currentProjectId);
+    renderParts(p.assembly || {});
+}
+
+function renderAttachPreview() {
+    const host = document.getElementById('attach-preview');
+    if (!host) return;
+    host.innerHTML = pendingAttachments.map(a =>
+        `<span class="attach-chip">${escHtml(a.filename)}</span>`
+    ).join('');
+}
+
+async function uploadChatFiles(event) {
+    if (!currentProjectId) {
+        alert('Create a project first.');
+        event.target.value = '';
+        return;
+    }
+    const files = [...(event.target.files || [])];
+    for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const resp = await fetch('/api/projects/' + currentProjectId + '/attachments', { method: 'POST', body: fd });
+        if (!resp.ok) {
+            alert('Could not attach ' + file.name);
+            continue;
+        }
+        pendingAttachments.push(await resp.json());
+    }
+    event.target.value = '';
+    renderAttachPreview();
+    if (!currentVision && pendingAttachments.length) {
+        appendMsg('note', 'This model is not vision-native. Switch to OpenAI, Anthropic, Gemini, or an OpenRouter vision model to read the drawing.', 'tool');
+    }
+}
     const host = document.getElementById('params-strip');
     const keys = Object.keys(params);
     if (!keys.length) {
@@ -315,7 +376,15 @@ function syncThinkSelect(level) {
 function onProviderChange() {
     const p = document.getElementById('llm-provider').value;
     const model = document.getElementById('llm-model');
-    if (p === 'deepseek' && !model.value.trim()) model.value = 'deepseek-v4-pro';
+    const defaults = {
+        openai: 'gpt-4.1',
+        anthropic: 'claude-sonnet-4-5',
+        gemini: 'gemini-2.5-flash',
+        deepseek: 'deepseek-v4-pro',
+        openrouter: 'openai/gpt-4.1',
+        ollama: 'llama3.2',
+    };
+    if (!model.value.trim() && defaults[p]) model.value = defaults[p];
 }
 
 async function saveThinkingLevel() {
@@ -479,13 +548,19 @@ async function sendChatText(text) {
     if (agentStreaming) return;
     await saveSource();
     appendMsg('you', text);
+    pendingAttachments = [];
+    renderAttachPreview();
     agentStreaming = true;
     setComposerLocked(true);
     try {
         const resp = await fetch('/api/projects/' + currentProjectId + '/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: text, mode: coderMode }),
+            body: JSON.stringify({
+                content: text,
+                mode: coderMode,
+                attachment_ids: pendingAttachments.map(a => a.id),
+            }),
         });
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
@@ -533,6 +608,7 @@ async function sendChatText(text) {
             const p = await api('/api/projects/' + currentProjectId);
             monacoEditor.setValue(p.cadquery_source || '');
             renderParams(p.params || {});
+            renderParts(p.assembly || {});
         }
     } finally {
         agentStreaming = false;
@@ -546,6 +622,14 @@ async function loadSettings() {
     document.getElementById('llm-model').value = cfg.llm_model || '';
     document.getElementById('llm-base').value = cfg.llm_base_url || '';
     document.getElementById('key-status').textContent = cfg.llm_api_key_set ? 'A key is saved on this machine.' : 'No key saved yet.';
+    currentVision = !!cfg.vision;
+    const vs = document.getElementById('think-status');
+    if (vs) {
+        vs.textContent = (thinkHint(cfg.llm_thinking || 'high') + ' ' +
+            (cfg.vision
+                ? 'This model can read drawings and photos attached in chat.'
+                : 'Not vision-native — switch to OpenAI, Anthropic, Gemini, or OpenRouter to read images.'));
+    }
     syncThinkSelect(cfg.llm_thinking || 'high');
     document.getElementById('search-provider').value = cfg.search_provider || 'auto';
     document.getElementById('search-status').textContent = cfg.search_api_key_set

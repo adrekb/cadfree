@@ -78,6 +78,40 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS attachments (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                filename TEXT NOT NULL DEFAULT '',
+                mime TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS parts (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'part',
+                cadquery_source TEXT NOT NULL DEFAULT '',
+                metrics TEXT NOT NULL DEFAULT '{}',
+                qty INTEGER NOT NULL DEFAULT 1,
+                material_id TEXT,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS instances (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                part_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                parent_id TEXT,
+                loc TEXT NOT NULL DEFAULT '{}',
+                pattern TEXT NOT NULL DEFAULT '{}',
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY(part_id) REFERENCES parts(id) ON DELETE CASCADE
+            );
             """
         )
 

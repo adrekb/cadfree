@@ -5,6 +5,12 @@ from typing import Any, Iterator
 
 import httpx
 
+from cadfree.agent.vision import (
+    default_model,
+    materialize_anthropic_user_content,
+    materialize_openai_messages,
+    vision_capable,
+)
 from cadfree.store.db import get_setting
 
 THINKING_LEVELS = ("off", "low", "high", "max")
@@ -36,13 +42,14 @@ def llm_config() -> dict[str, Any]:
     provider = (get_setting("llm_provider", "openai") or "openai").lower()
     model = get_setting("llm_model", "") or ""
     if not str(model).strip():
-        model = "deepseek-v4-pro" if provider == "deepseek" else "gpt-4.1"
+        model = default_model(provider)
     return {
         "provider": provider,
         "api_key": get_setting("llm_api_key", "") or "",
         "model": model,
         "base_url": get_setting("llm_base_url", "") or "",
         "thinking": normalize_thinking(get_setting("llm_thinking", DEFAULT_THINKING)),
+        "vision": vision_capable(provider, model),
     }
 
 
@@ -67,7 +74,7 @@ def apply_thinking(body: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
         body["thinking"] = {"type": "enabled"}
         body["reasoning_effort"] = thinking
         return body
-    if provider in {"openai", "openrouter", "custom"}:
+    if provider in {"openai", "openrouter", "custom", "gemini"}:
         body["reasoning_effort"] = "xhigh" if thinking == "max" else thinking
     return body
 
@@ -78,6 +85,8 @@ def _openai_compatible_url(cfg: dict[str, Any]) -> str:
         return cfg["base_url"].rstrip("/") + "/chat/completions"
     if provider == "openrouter":
         return "https://openrouter.ai/api/v1/chat/completions"
+    if provider == "gemini":
+        return "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
     if provider == "ollama":
         return "http://127.0.0.1:11434/v1/chat/completions"
     if provider == "deepseek":
@@ -91,7 +100,7 @@ def complete(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dic
     if not cfg.get("api_key") and provider not in {"ollama"}:
         raise LLMError(
             "No API key saved. Open Settings and paste a key for OpenAI, Anthropic, "
-            "OpenRouter, or DeepSeek — the same flow as Carrot."
+            "OpenRouter, Gemini, or DeepSeek — the same flow as Carrot."
         )
     if provider == "anthropic":
         return _anthropic(cfg, messages, tools)
@@ -146,7 +155,11 @@ def openai_chat_body(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {"model": cfg["model"], "messages": messages}
+    include = vision_capable(cfg.get("provider") or "", cfg.get("model") or "")
+    body: dict[str, Any] = {
+        "model": cfg["model"],
+        "messages": materialize_openai_messages(messages, include_images=include),
+    }
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"
@@ -197,7 +210,9 @@ def _anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _to_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+def _to_anthropic_messages(
+    messages: list[dict[str, Any]], *, include_images: bool = True
+) -> tuple[str, list[dict[str, Any]]]:
     system = ""
     converted: list[dict[str, Any]] = []
     for msg in messages:
@@ -240,12 +255,21 @@ def _to_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[di
                 )
             converted.append({"role": "assistant", "content": blocks})
             continue
+        if role == "user":
+            converted.append(
+                {
+                    "role": "user",
+                    "content": materialize_anthropic_user_content(msg, include_images=include_images),
+                }
+            )
+            continue
         converted.append({"role": role, "content": msg.get("content") or ""})
     return system.strip(), converted
 
 
 def _anthropic(cfg: dict[str, Any], messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-    system, converted = _to_anthropic_messages(messages)
+    include = vision_capable(cfg.get("provider") or "", cfg.get("model") or "")
+    system, converted = _to_anthropic_messages(messages, include_images=include)
     thinking = normalize_thinking(cfg.get("thinking"))
     body: dict[str, Any] = {
         "model": cfg.get("model") or "claude-sonnet-4-5",

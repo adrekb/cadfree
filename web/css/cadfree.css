@@ -58,6 +58,22 @@
   display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 12px;
   border-bottom: 1px solid var(--border); background: var(--card);
 }
+.parts-strip {
+  display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); background: var(--bg2);
+  align-items: center;
+}
+.part-chip {
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--card2); cursor: pointer;
+  color: var(--text);
+}
+.part-chip.on { border-color: var(--accent); color: var(--accent); }
+.attach-preview { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.attach-chip {
+  font-size: 11px; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted);
+}
 .param-field { display: flex; flex-direction: column; gap: 2px; min-width: 110px; }
 .param-field label { font-size: 11px; color: var(--faint); letter-spacing: 0.04em; text-transform: uppercase; }
 .param-field input { width: 100%; }

@@ -24,7 +24,19 @@ Rules:
 - CadQuery is the geometry language. Assign the solid to `result`.
 - Keep a top-level PARAMS = { ... } dict of millimetre numbers so the user can
   drag sliders without you. Prefer editing PARAMS before rewriting topology.
-- After every geometry change, call `build_model`, then `check_feasibility`.
+- LARGE ASSEMBLIES: never duplicate a body 40 times in one script. Create
+  unique parts with `upsert_part`, then `place_instance` with loc and a
+  pattern (linear / grid / circular). Fasteners and COTS hardware are
+  kind=purchased or kind=fastener BOM lines — no solid required. Cap is
+  250 expanded instances. Subassemblies use parent_id. Call `list_assembly`
+  for the tree and BOM.
+- After every geometry change, call `build_model` (optional part_id), then
+  `check_feasibility`.
+- If the user attached a drawing or photo, READ IT. Extract dimensions,
+  hole patterns, and notes; still `ask_survey` for anything the image does
+  not actually state. Do not invent a scale. If the current model is not
+  vision-native, say so and ask them to switch to OpenAI, Anthropic, Gemini,
+  or an OpenRouter vision model.
 - Use `run_simulation` for load cases. First-order is always on; MATLAB/Octave
   if installed; mesh FEA only if gmsh+CalculiX are present. Never claim FEA
   ran if it did not. Never claim a lab coupon.
