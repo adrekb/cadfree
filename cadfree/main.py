@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from cadfree.agent.cadcoder import cadcoder_status, draft_from_image
 from cadfree.agent.loop import run_turn
 from cadfree.agent.mcp import PROTOCOL as MCP_PROTOCOL, mcp_endpoint
 from cadfree.agent.providers import llm_config
@@ -26,9 +27,13 @@ from cadfree.cad.assembly import (
     set_active_part,
 )
 from cadfree.cad.params import STARTER_BRACKET, apply_params, extract_params
+from cadfree.cad.dxf import export_dxf
 from cadfree.cad.features import FEATURE_TREE_NOTE, extract_features, patch_feature
 from cadfree.cad.import_cad import import_bytes, import_status
-from cadfree.cad.runner import build_cadquery, cadquery_status
+from cadfree.cad.refs import annotate_features, list_cad_refs, resolve_cad_ref
+from cadfree.cad.runner import build_cadquery, build123d_status, cadquery_status
+from cadfree.cad.snapshot import verify_against_image
+from cadfree.cad.urdf import export_urdf
 from cadfree.catalog import catalog_payload, preset_by_id
 from cadfree.manufacturing.evaluate import evaluate
 from cadfree.manufacturing.mesh import load_mesh, metrics_from_mesh
@@ -63,6 +68,9 @@ class SettingsIn(BaseModel):
     search_provider: str | None = None
     search_api_key: str | None = None
     llm_thinking: str | None = None
+    cadcoder_base_url: str | None = None
+    cadcoder_model: str | None = None
+    cadcoder_api_key: str | None = None
 
 
 class CapabilityIn(BaseModel):
@@ -97,6 +105,21 @@ class ChatIn(BaseModel):
 
 class SurveyAnswersIn(BaseModel):
     answers: dict[str, Any]
+
+
+class VerifyImageIn(BaseModel):
+    attachment_id: str | None = None
+    part_id: str | None = None
+
+
+class CadRefIn(BaseModel):
+    ref: str
+    part_id: str | None = None
+
+
+class DraftImageIn(BaseModel):
+    attachment_id: str | None = None
+    part_id: str | None = None
 
 
 class FeaturePatchIn(BaseModel):
@@ -160,6 +183,8 @@ def create_app() -> FastAPI:
         return {
             "ok": True,
             "cadquery": cadquery_status(),
+            "build123d": build123d_status(),
+            "cadcoder": cadcoder_status(),
             "import": import_status(),
             "matlab": find_engine(),
             "simulation": sim_probe(),
@@ -194,6 +219,14 @@ def create_app() -> FastAPI:
             cfg["search_api_key"] = ""
         else:
             cfg["search_api_key_set"] = False
+        if cfg.get("cadcoder_api_key"):
+            cfg["cadcoder_api_key_set"] = True
+            cfg["cadcoder_api_key"] = ""
+        else:
+            cfg["cadcoder_api_key_set"] = False
+        cfg.setdefault("cadcoder_base_url", "")
+        cfg.setdefault("cadcoder_model", "cad-coder")
+        cfg["cadcoder"] = cadcoder_status()
         cfg["ui_theme"] = "dark"
         cfg.setdefault("ui_accent", "carrot")
         cfg.setdefault("llm_provider", "openai")
@@ -221,6 +254,8 @@ def create_app() -> FastAPI:
             data.pop("llm_api_key", None)
         if data.get("search_api_key") == "":
             data.pop("search_api_key", None)
+        if data.get("cadcoder_api_key") == "":
+            data.pop("cadcoder_api_key", None)
         for key, value in data.items():
             if key == "llm_thinking":
                 from cadfree.agent.providers import normalize_thinking
@@ -320,7 +355,7 @@ def create_app() -> FastAPI:
 
         live = load_live(part_dir(project_id, active["id"]) / "features.live.json")
         tree = extract_features(item["cadquery_source"], live=live)
-        item["features"] = tree.get("features") or []
+        item["features"] = annotate_features(list(tree.get("features") or []))
         item["feature_note"] = tree.get("honest") or FEATURE_TREE_NOTE
         item["feature_live"] = bool(tree.get("live"))
         item["messages"] = [dict(m) for m in messages]
@@ -372,6 +407,7 @@ def create_app() -> FastAPI:
 
         live = load_live(part_dir(project_id, part["id"]) / "features.live.json")
         out = extract_features(part.get("cadquery_source") or "", live=live)
+        out["features"] = annotate_features(list(out.get("features") or []))
         out["part_id"] = part["id"]
         out["imported"] = False
         return out
@@ -698,6 +734,51 @@ def create_app() -> FastAPI:
         if not path.is_file():
             raise HTTPException(404, "attachment file missing")
         return FileResponse(path, media_type=row["mime"], filename=row["filename"])
+
+    @app.post("/api/projects/{project_id}/verify-image")
+    def verify_image(project_id: str, body: VerifyImageIn = VerifyImageIn()) -> dict[str, Any]:
+        result = verify_against_image(
+            project_id, attachment_id=body.attachment_id, part_id=body.part_id
+        )
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error") or "verify failed")
+        return result
+
+    @app.get("/api/projects/{project_id}/urdf")
+    def get_urdf(project_id: str) -> FileResponse:
+        result = export_urdf(project_id)
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error") or "urdf export failed")
+        path = Path(result["path"])
+        return FileResponse(path, media_type="application/xml", filename="robot.urdf")
+
+    @app.get("/api/projects/{project_id}/dxf")
+    def get_dxf(project_id: str, part_id: str | None = None) -> FileResponse:
+        result = export_dxf(project_id, part_id=part_id)
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error") or "dxf export failed")
+        path = Path(result["path"])
+        return FileResponse(path, media_type="image/vnd.dxf", filename=path.name)
+
+    @app.get("/api/projects/{project_id}/cad-refs")
+    def get_cad_refs(project_id: str, part_id: str | None = None) -> dict[str, Any]:
+        return list_cad_refs(project_id, part_id=part_id)
+
+    @app.post("/api/projects/{project_id}/cad-refs/resolve")
+    def post_resolve_cad_ref(project_id: str, body: CadRefIn) -> dict[str, Any]:
+        result = resolve_cad_ref(project_id, body.ref, part_id=body.part_id)
+        if not result.get("ok"):
+            raise HTTPException(404, result.get("error") or "unknown @cad ref")
+        return result
+
+    @app.post("/api/projects/{project_id}/draft-from-image")
+    def post_draft_from_image(project_id: str, body: DraftImageIn = DraftImageIn()) -> dict[str, Any]:
+        result = draft_from_image(
+            project_id, attachment_id=body.attachment_id, part_id=body.part_id
+        )
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error") or "CAD-Coder unavailable")
+        return result
 
     @app.post("/api/projects/{project_id}/chat")
     def chat(project_id: str, body: ChatIn) -> StreamingResponse:

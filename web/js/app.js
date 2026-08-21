@@ -223,13 +223,26 @@ async function loadStudio(id) {
         questions: s.questions,
     }));
     document.getElementById('stl-download').href = '/api/projects/' + id + '/stl';
+    const urdf = document.getElementById('urdf-download');
+    if (urdf) urdf.href = '/api/projects/' + id + '/urdf';
+    const dxf = document.getElementById('dxf-download');
+    if (dxf) dxf.href = '/api/projects/' + id + '/dxf';
     refreshViewer(id);
     loadMotion(id);
     if (window.cadfreeViewer) {
         window.cadfreeViewer.onPick = (pickIndex) => {
             if (!pickIndex) return;
             const feat = featureCache.find(f => Number(f.pick_index) === Number(pickIndex));
-            if (feat) selectFeature(feat.id);
+            if (feat) {
+                selectFeature(feat.id);
+                return;
+            }
+            const handle = '@cad[face:' + pickIndex + ']';
+            const refEl = document.getElementById('feature-cad-ref');
+            if (refEl) {
+                refEl.hidden = false;
+                refEl.textContent = handle;
+            }
         };
     }
 }
@@ -420,9 +433,11 @@ function renderFeatureTree(features, meta) {
             const sel = (feat.selectors || []).slice(-1)[0];
             const on = feat.id === selectedFeatureId ? ' on' : '';
             const live = feat.live && feat.pick_index ? '<span class="sel">3D pick</span>' : '';
+            const href = feat.face_ref || feat.cad_ref || '';
+            const ref = href ? `<span class="sel cad-ref">${escHtml(href)}</span>` : '';
             return `<button type="button" class="feature-row${on}" data-feature="${escHtml(feat.id)}">
               <span class="feature-kind">${escHtml(feat.kind)}</span>
-              <span class="lbl">${escHtml(feat.label)}${sel ? `<span class="sel">${escHtml(sel)}</span>` : ''}${live}</span>
+              <span class="lbl">${escHtml(feat.label)}${sel ? `<span class="sel">${escHtml(sel)}</span>` : ''}${live}${ref}</span>
             </button>`;
         }).join('');
         return `<div class="feature-group"><div class="feature-group-name">${escHtml(body)}</div>${rows}</div>`;
@@ -447,6 +462,19 @@ function selectFeature(id) {
     if (window.cadfreeViewer && typeof window.cadfreeViewer.highlight === 'function') {
         window.cadfreeViewer.highlight(feat.pick_index || 0);
     }
+    const refEl = document.getElementById('feature-cad-ref');
+    if (refEl) {
+        const handle = feat.face_ref || feat.cad_ref;
+        if (handle) {
+            refEl.hidden = false;
+            refEl.textContent = handle;
+            refEl.title = 'Click to copy';
+            refEl.style.cursor = 'pointer';
+            refEl.onclick = () => navigator.clipboard && navigator.clipboard.writeText(handle);
+        } else {
+            refEl.hidden = true;
+        }
+    }
 }
 
 function showFeatureInspector(feat) {
@@ -454,6 +482,19 @@ function showFeatureInspector(feat) {
     const input = document.getElementById('feature-value');
     const label = document.getElementById('feature-value-label');
     const hint = document.getElementById('feature-inspect-hint');
+    const refEl = document.getElementById('feature-cad-ref');
+    if (refEl) {
+        const handle = feat.face_ref || feat.cad_ref;
+        if (handle) {
+            refEl.hidden = false;
+            refEl.textContent = handle;
+            refEl.title = 'Click to copy';
+            refEl.style.cursor = 'pointer';
+            refEl.onclick = () => navigator.clipboard && navigator.clipboard.writeText(handle);
+        } else {
+            refEl.hidden = true;
+        }
+    }
     if (!inspector || !input) return;
     const primary = feat.primary || (feat.args || []).find(a => a.editable);
     if (!primary || primary.value == null) {
@@ -565,6 +606,10 @@ async function rebuildNow() {
     renderParts(built.assembly || {});
     await refreshFeatureTree();
     document.getElementById('stl-download').href = '/api/projects/' + currentProjectId + '/stl';
+    const urdf = document.getElementById('urdf-download');
+    if (urdf) urdf.href = '/api/projects/' + currentProjectId + '/urdf';
+    const dxf = document.getElementById('dxf-download');
+    if (dxf) dxf.href = '/api/projects/' + currentProjectId + '/dxf';
     refreshViewer(currentProjectId);
 }
 
@@ -1174,6 +1219,16 @@ async function loadSettings() {
     document.getElementById('search-status').textContent = cfg.search_api_key_set
         ? 'A Brave search key is saved on this machine.'
         : 'DuckDuckGo (no key). Paste a Brave key for a stronger standards search.';
+    const cu = document.getElementById('cadcoder-url');
+    const cm = document.getElementById('cadcoder-model');
+    const cs = document.getElementById('cadcoder-status');
+    if (cu) cu.value = cfg.cadcoder_base_url || '';
+    if (cm) cm.value = cfg.cadcoder_model || 'cad-coder';
+    if (cs) {
+        cs.textContent = (cfg.cadcoder && cfg.cadcoder.available)
+            ? 'CAD-Coder endpoint is set. draft_from_image will call it.'
+            : 'No CAD-Coder URL — image→CadQuery is skipped with an install hint.';
+    }
     if (typeof renderThemePicker === 'function') renderThemePicker();
 }
 
@@ -1184,14 +1239,20 @@ async function saveSettings() {
         llm_base_url: document.getElementById('llm-base').value,
         llm_thinking: document.getElementById('llm-thinking').value,
         search_provider: document.getElementById('search-provider').value,
+        cadcoder_base_url: (document.getElementById('cadcoder-url') || {}).value || '',
+        cadcoder_model: (document.getElementById('cadcoder-model') || {}).value || '',
     };
     const key = document.getElementById('llm-key').value.trim();
     if (key) body.llm_api_key = key;
     const skey = document.getElementById('search-key').value.trim();
     if (skey) body.search_api_key = skey;
+    const ckey = (document.getElementById('cadcoder-key') || {value: ''}).value.trim();
+    if (ckey) body.cadcoder_api_key = ckey;
     await api('/api/settings', { method: 'POST', body: JSON.stringify(body) });
     document.getElementById('llm-key').value = '';
     document.getElementById('search-key').value = '';
+    const ck = document.getElementById('cadcoder-key');
+    if (ck) ck.value = '';
     loadSettings();
     loadDashboard();
 }

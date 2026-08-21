@@ -181,7 +181,8 @@ h1, h2, h3, h4,
 }
 .feature-inspector-row { display: flex; gap: 8px; align-items: center; }
 .feature-inspector-row input { flex: 1; min-width: 0; }
-#feature-tree-note { padding: 8px 12px 12px; margin: 0; }
+#feature-cad-ref { padding: 0 12px 10px; font-family: var(--mono, ui-monospace, monospace); font-size: 11px; }
+.cad-ref { opacity: 0.75; }
 #view-canvas, #view-code-wrap { min-height: 0; position: relative; }
 #view-canvas { grid-column: 2; grid-row: 1; }
 #view-code-wrap { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-height: 0; }

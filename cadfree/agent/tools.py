@@ -20,7 +20,11 @@ from cadfree.cad.assembly import (
 from cadfree.cad.params import apply_params, extract_params
 from cadfree.cad.features import FEATURE_TREE_NOTE, extract_features, patch_feature
 from cadfree.cad.import_cad import import_status
-from cadfree.cad.runner import build_cadquery, cadquery_status
+from cadfree.cad.dxf import export_dxf
+from cadfree.cad.refs import list_cad_refs, resolve_cad_ref
+from cadfree.cad.runner import build_cadquery, build123d_status, cadquery_status
+from cadfree.cad.snapshot import snapshot_status, verify_against_image
+from cadfree.cad.urdf import export_urdf
 from cadfree.catalog import MATERIALS, catalog_payload
 from cadfree.manufacturing.evaluate import evaluate
 from cadfree.manufacturing.mesh import MeshMetrics, load_mesh, metrics_from_mesh
@@ -143,7 +147,19 @@ def make_handlers(project_id: str) -> dict[str, Any]:
     def get_workshop() -> dict[str, Any]:
         with db() as conn:
             caps = [_cap_dict(r) for r in conn.execute("SELECT * FROM capabilities").fetchall()]
-        return {"capabilities": caps, "catalog": catalog_payload(), "cadquery": cadquery_status(), "import": import_status(), "matlab": find_engine(), "simulation": sim_probe()}
+        from cadfree.agent.cadcoder import cadcoder_status
+
+        return {
+            "capabilities": caps,
+            "catalog": catalog_payload(),
+            "cadquery": cadquery_status(),
+            "build123d": build123d_status(),
+            "cadcoder": cadcoder_status(),
+            "snapshots": snapshot_status(),
+            "import": import_status(),
+            "matlab": find_engine(),
+            "simulation": sim_probe(),
+        }
 
     def get_project() -> dict[str, Any]:
         p = _row(project_id)
@@ -173,7 +189,11 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "feature_tree": {
                 "count": len(tree.get("features") or []),
                 "kinds": [f["kind"] for f in (tree.get("features") or [])],
-                "note": "Call list_features to inspect ops; patch_feature to change one fillet without rewriting the script. Not a SolidWorks history kernel.",
+                "note": (
+                    "Call list_features / list_cad_refs. Handles are @cad[feature:id] and "
+                    "@cad[face:N] after a live rebuild. patch_feature changes one fillet. "
+                    "Not a SolidWorks history kernel."
+                ),
             },
         }
 
@@ -298,6 +318,9 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             part.get("cadquery_source") or "",
             live=load_live(part_dir(project_id, part["id"]) / "features.live.json"),
         )
+        from cadfree.cad.refs import annotate_features
+
+        out["features"] = annotate_features(list(out.get("features") or []))
         out["ok"] = True
         out["part_id"] = part["id"]
         return out
@@ -652,6 +675,26 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         part = set_active_part(project_id, part_id)
         return {"ok": True, "part": part}
 
+    def verify_image(attachment_id: str | None = None, part_id: str | None = None) -> dict[str, Any]:
+        return verify_against_image(project_id, attachment_id=attachment_id, part_id=part_id)
+
+    def urdf_export() -> dict[str, Any]:
+        return export_urdf(project_id)
+
+    def dxf_export(part_id: str | None = None) -> dict[str, Any]:
+        return export_dxf(project_id, part_id=part_id)
+
+    def cad_refs(part_id: str | None = None) -> dict[str, Any]:
+        return list_cad_refs(project_id, part_id=part_id)
+
+    def cad_ref(ref: str, part_id: str | None = None) -> dict[str, Any]:
+        return resolve_cad_ref(project_id, ref, part_id=part_id)
+
+    def draft_image(attachment_id: str | None = None, part_id: str | None = None) -> dict[str, Any]:
+        from cadfree.agent.cadcoder import draft_from_image
+
+        return draft_from_image(project_id, attachment_id=attachment_id, part_id=part_id)
+
     return {
         "get_workshop": get_workshop,
         "get_project": get_project,
@@ -685,4 +728,10 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "generate_designs": generate_designs,
         "search_parts": search_cots,
         "commit_cots_kit": commit_kit,
+        "verify_against_image": verify_image,
+        "export_urdf": urdf_export,
+        "export_dxf": dxf_export,
+        "list_cad_refs": cad_refs,
+        "resolve_cad_ref": cad_ref,
+        "draft_from_image": draft_image,
     }

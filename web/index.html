@@ -126,6 +126,8 @@
           Import CAD
         </label>
         <a class="btn btn-ghost" id="stl-download" href="#" download="model.stl">STL</a>
+        <a class="btn btn-ghost" id="urdf-download" href="#" download="robot.urdf">URDF</a>
+        <a class="btn btn-ghost" id="dxf-download" href="#" download="part.dxf">DXF</a>
         <button class="btn btn-primary" onclick="toggleAgentSide()">Agent</button>
       </div>
       <div class="cad-main">
@@ -139,6 +141,7 @@
               <button class="btn btn-primary" type="button" onclick="applyFeatureEdit()">Apply</button>
             </div>
             <p class="muted small" id="feature-inspect-hint"></p>
+            <p class="muted small" id="feature-cad-ref" hidden></p>
           </div>
           <p class="muted small" id="feature-tree-note"></p>
         </aside>
@@ -267,6 +270,17 @@
       <p class="muted small" id="search-status"></p>
     </div>
     <div class="settings-card">
+      <div class="settings-head"><svg class="ico"><use href="#i-robot"/></svg><h3>CAD-Coder (optional)</h3></div>
+      <p class="muted">Image→CadQuery from an OpenAI-compatible CAD-Coder endpoint. GPU checkpoint is not bundled. Leave blank and the agent will say so instead of inventing a script.</p>
+      <div class="settings-row">
+        <input id="cadcoder-url" type="url" placeholder="http://127.0.0.1:8000/v1" autocomplete="off">
+        <input id="cadcoder-model" type="text" placeholder="cad-coder" autocomplete="off">
+        <input id="cadcoder-key" type="password" placeholder="API key (optional)" autocomplete="off">
+        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+      </div>
+      <p class="muted small" id="cadcoder-status"></p>
+    </div>
+    <div class="settings-card">
       <div class="settings-head"><svg class="ico"><use href="#i-palette"/></svg><h3>Appearance</h3></div>
       <p class="muted">Dark only. Inter on every surface. Pick an accent — Carrot orange is the default.</p>
       <div id="theme-modes" class="theme-swatches" hidden></div>
@@ -292,6 +306,10 @@
       <p>ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, and manufacturer datasheets are searched on the public web, ranked with standards bodies first. The agent cites the URL. If the document is a paid PDF, it says so and does not invent clause numbers. Optional Brave Search key is in Settings.</p>
       <h3>DeepSeek V4 Pro</h3>
       <p>DeepSeek is text-only — it cannot read a drawing or a photo of a part. Drawings need a <b>vision-native</b> model: OpenAI GPT-4.1 / GPT-4o, Anthropic Claude, Gemini 2.5, or an OpenRouter vision model. Attach the image in chat. Thinking levels still work on DeepSeek for text-only agent work.</p>
+      <h3>Drawing loop — silhouette IoU, not GIFT training</h3>
+      <p>GIFT (ICML 2026) is a <i>training</i> method. Cadfree steals the runtime idea: build the solid, rasterize orthographic silhouettes (+x/+y/+z), score IoU against an attached drawing, iterate PARAMS. PNG works without extra packages. JPEG needs Pillow. Missing decoder → one sentence, never a fake IoU.</p>
+      <h3>@cad handles, URDF, DXF, build123d</h3>
+      <p>Click a live fillet to copy <code>@cad[face:N]</code>. <code>list_cad_refs</code> also lists feature/part/instance/joint handles. <b>URDF</b> writes unique instances + joints in metres (bbox inertia; gear/spring become fixed with a note). <b>DXF</b> is the convex hull of the largest-area projection — a laser silhouette, not a shop drawing. A script that <code>import build123d</code> (and not cadquery) runs on the same OCP kernel; no pick-ids. Optional CAD-Coder is Settings → an HTTP endpoint, never a required GPU.</p>
       <h3>Large assemblies</h3>
       <p>Shop-scale, not a car: unique parts (up to 32 solids) tessellated once, then linear / grid / circular / mirror instances (cap 400). Nested <code>parent_id</code> multiplies children. Fasteners are BOM lines. STL download is the active unique part.</p>
       <h3>Import from other programs</h3>
