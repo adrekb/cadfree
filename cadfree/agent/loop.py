@@ -36,9 +36,9 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "get_workshop",
             "List the user's machines, materials, CadQuery/MATLAB/FEA availability. "
-            "catalog.cots_classes and catalog.cots_parts are whoop / 3-inch / 5-inch / "
-            "7-inch rows and street-typical motors/props/batteries/FC/ESC — same catalog "
-            "as PETG vs PLA, not a special drone agent. Prices are not live stock.",
+            "catalog.cots_classes, cots_parts, and cots_springs are whoop / 5-inch rows, "
+            "motors/props, and street-typical coils — same catalog as PETG vs PLA. "
+            "Prices are not live stock.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             handlers["get_workshop"],
         ),
@@ -152,16 +152,21 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "define_joint",
-            "Add a kinematic joint between instances. kind: revolute | prismatic | gear | fixed. "
+            "Add a kinematic joint or a force element. kind: revolute | prismatic | gear | fixed | spring | torsion. "
             "instance_a is parent or empty for ground; instance_b is the moving child. "
             "origin {x,y,z} mm is the pin (world). axis x|y|z. driven=true on the input crank. "
             "Four revolutes ground-crank-coupler-rocker-ground is a four-bar. "
-            "Gear needs params {module_mm, teeth_a, teeth_b} and ratio.",
+            "Gear needs params {module_mm, teeth_a, teeth_b} and ratio. "
+            "spring is a FORCE ELEMENT (not a constraint): params {k_n_per_mm, free_mm, solid_mm, d_mm, D_mm, n_active, end:{x,y,z}}. "
+            "torsion: params {k_nm_per_rad, rest_deg}. Pose still comes from revolute/prismatic.",
             {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
-                    "kind": {"type": "string", "enum": ["revolute", "prismatic", "gear", "fixed"]},
+                    "kind": {
+                        "type": "string",
+                        "enum": ["revolute", "prismatic", "gear", "fixed", "spring", "torsion"],
+                    },
                     "instance_a": {"type": "string"},
                     "instance_b": {"type": "string"},
                     "origin": {"type": "object"},
@@ -212,11 +217,11 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "check_mechanism",
-            "Does this linkage actually move? Sweeps the driven joint, reports lock-up, "
-            "convex-hull clashes, Grashof class, min transmission angle, slider travel, "
-            "and gear pitch. Returns verdict works|awkward|locks|collides|gears_wrong "
-            "and for_model for you to cite. Not SolidWorks Motion. Call after define_joint "
-            "and build_model so meshes exist.",
+            "Does this linkage actually move, and what does a pin see? Sweeps the driven joint "
+            "(lock-up, convex-hull clash, Grashof, transmission, gears). If load_n / input_torque_nm "
+            "or a spring joint is present, planar quasi-static pin forces and Wahl/solid-height "
+            "on coils. Verdict works|awkward|locks|collides|gears_wrong|overloaded. "
+            "Not Motion, not Adams, not mẍ of the whole assembly. Cite for_model.",
             {
                 "type": "object",
                 "properties": {
@@ -230,8 +235,8 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "lookup_formula",
             "Search the SI formula book (friction, PV, wear, pipe, aero drag, beams, "
-            "multirotor hover / T/W / first-order speed). "
-            "Do not invent μ, C_d, or viscosity — use a book pair/fluid or ask_survey.",
+            "coil springs / Wahl, pin shear, 1-DOF ωn, multirotor hover). "
+            "Do not invent μ, C_d, k, or viscosity — use a book pair/fluid or ask_survey.",
             {
                 "type": "object",
                 "properties": {
@@ -264,8 +269,9 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "run_solvers",
             "Snapshot the built part as SI (metres, N, Pa) and send a mesh copy to packaged "
-            "solvers: analytical formula book (always), Gmsh+CalculiX FEA if installed, "
-            "fluids/aero handbook + CFD handoff if OpenFOAM/Elmer/SU2 exist. "
+            "solvers: analytical formula book (always), planar pin/spring statics (mechanism), "
+            "Gmsh+CalculiX FEA if installed, fluids/aero handbook + CFD handoff if "
+            "OpenFOAM/Elmer/SU2 exist. pack=spring for coil/Wahl/1-DOF. "
             "Then iterate PARAMS from results[].iterate. Never invent FEA/CFD numbers.",
             {
                 "type": "object",
@@ -274,13 +280,13 @@ def _bind_tools(project_id: str) -> None:
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["analytical", "fea", "fluids", "topology"],
+                            "enum": ["analytical", "fea", "fluids", "topology", "mechanism"],
                         },
                     },
                     "values": {"type": "object"},
                     "pack": {
                         "type": "string",
-                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor"],
+                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor", "spring", "mechanism"],
                     },
                     "part_id": {"type": "string"},
                 },
@@ -330,7 +336,7 @@ def _bind_tools(project_id: str) -> None:
                     "query": {"type": "string"},
                     "role": {
                         "type": "string",
-                        "enum": ["motor", "prop", "battery", "fc", "esc"],
+                        "enum": ["motor", "prop", "battery", "fc", "esc", "spring"],
                     },
                     "class_id": {"type": "string"},
                     "budget_usd": {"type": "number"},
@@ -464,11 +470,11 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "check_feasibility",
             "Score the spec against the workshop and the catalog — same tool for a 50 lb "
-            "bracket and a drone. Whoop vs 5-inch lives in get_workshop.catalog.cots_classes, "
-            "not a special agent. Class floors (speed/cost/range/payload) run even before a "
-            "mesh exists. After build_model this also does DFM, mass, and first-order strength. "
-            "If possible is false, say so first and name the smallest change. Do not CAD an "
-            "impossible spec.",
+            "bracket, a drone, and a spring-return latch. Whoop vs 5-inch and coil rates live "
+            "in get_workshop.catalog. Class floors and spring solid-height/Wahl run even before "
+            "a mesh. After build_model this also does DFM, mass, and first-order strength. "
+            "If joints + a load exist, planar pin forces ride along. If possible is false, "
+            "say so first and name the smallest change.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             handlers["check_feasibility"],
         ),

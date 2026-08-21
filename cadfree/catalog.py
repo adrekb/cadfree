@@ -638,6 +638,8 @@ def preset_by_id(preset_id: str) -> dict[str, Any] | None:
 
 def catalog_payload() -> dict[str, Any]:
     from cadfree.cots.catalog import CLASSES, ITEMS, PRICE_NOTE
+    from cadfree.cots.springs import PRICE_NOTE as SPRING_PRICE_NOTE
+    from cadfree.cots.springs import SPRINGS
 
     parts = [
         {
@@ -659,4 +661,6 @@ def catalog_payload() -> dict[str, Any]:
         "cots_classes": CLASSES,
         "cots_parts": parts,
         "cots_price_note": PRICE_NOTE,
+        "cots_springs": SPRINGS,
+        "cots_spring_price_note": SPRING_PRICE_NOTE,
     }

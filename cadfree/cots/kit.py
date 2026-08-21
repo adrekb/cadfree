@@ -23,6 +23,7 @@ from cadfree.cots.catalog import (
     resolve_class_id,
     search_catalog,
 )
+from cadfree.cots.springs import search_springs
 from cadfree.cots.score import score_vehicle_spec, spec_from_constraints
 from cadfree.paths import project_dir
 from cadfree.store.db import db
@@ -385,6 +386,9 @@ def search_parts(
     catalog = search_catalog(
         query, role=role, class_id=class_id, budget_usd=budget_usd, limit=limit
     )
+    role_l = (role or "").strip().lower()
+    if role_l == "spring" or "spring" in (query or "").lower():
+        catalog = search_springs(query, kind=None, limit=limit) + [c for c in catalog if c.get("role") != "spring"]
     vendors: list[dict[str, Any]] = []
     web_note = "Web search skipped."
     if include_web:

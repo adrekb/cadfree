@@ -231,6 +231,42 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
         inputs["mu"] = float(mu)
     if "Cd" not in inputs and constraints.get("Cd") is not None:
         inputs["Cd"] = float(constraints["Cd"])
+    k_mm = constraints.get("k_n_per_mm")
+    try:
+        if k_mm is not None:
+            inputs["k"] = float(k_mm) * 1000.0
+    except (TypeError, ValueError):
+        pass
+    stroke = constraints.get("stroke_mm")
+    try:
+        if stroke is not None:
+            inputs["x"] = float(stroke) / 1000.0
+    except (TypeError, ValueError):
+        pass
+    if constraints.get("spring_force_n") is not None:
+        try:
+            inputs["F"] = float(constraints["spring_force_n"])
+        except (TypeError, ValueError):
+            pass
+    elif load is not None:
+        inputs.setdefault("F", float(load))
+    pin_d = constraints.get("pin_d_mm") or params.get("pin_d_mm")
+    wire_d = constraints.get("wire_d_mm") or params.get("wire_d_mm")
+    mean_d = constraints.get("mean_d_mm") or params.get("mean_d_mm")
+    try:
+        if wire_d is not None:
+            inputs["d"] = float(wire_d) * MM
+        elif pin_d is not None:
+            inputs["d"] = float(pin_d) * MM
+    except (TypeError, ValueError):
+        pass
+    try:
+        if mean_d is not None:
+            inputs["D"] = float(mean_d) * MM
+        if constraints.get("n_active") is not None:
+            inputs["n"] = float(constraints["n_active"])
+    except (TypeError, ValueError):
+        pass
     provenance = {
         "L": "max bbox edge from mesh (m)",
         "b": "middle bbox edge from mesh (m)",

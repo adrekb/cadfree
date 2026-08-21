@@ -95,8 +95,23 @@ a **slider-crank**, open revolute/prismatic chains, and a spur-gear **pitch-diam
 check. Sweeping the input reports lock-up, **convex-hull SAT** clashes of posed
 meshes, and the min **transmission angle** (below 40° is awkward). Pins that
 share a joint are ignored. This is not contact dynamics and not a Motion study.
-The studio Play/Check strip and the agent `check_mechanism` tool share that
-verdict.
+
+**Springs and pin loads** are the next honest rung, not Adams:
+
+- A `spring` / `torsion` joint is a **force element**. Pose still comes from
+  revolute/prismatic. Catalog coils (`cots_springs`) are whoop-vs-5-inch data.
+- At a pose: Hooke `F = kx`, coil rate `G d⁴ / (8 D³ n)`, Wahl shear, solid
+  height, spring energy. Latch work is ΔU.
+- Planar **quasi-static** pin forces (no inertia, no friction unless μ is given).
+  Four-bar: 9×9 holding torque + four pins. Slider-crank: two-force rod.
+  “What force does this linkage put into the pin?” is that number, compared to
+  pin shear if `pin_d_mm` is set.
+- 1-DOF `ωn = √(k/m)` for a suspension sag / return-spring. Not a quarter-car,
+  not `mẍ` of the whole assembly.
+
+The studio Play/Check strip and the agent `check_mechanism` tool share the
+kinematic verdict; pin/spring numbers ride on `loads`. `check_feasibility`
+uses the same overlay as a 50 lb bracket (catalog + Wahl + solid height).
 
 ## What we will not do
 

@@ -171,6 +171,17 @@ CONSTRAINT_KEYS = {
     "printed_frame",
     "cots_electronics",
     "confirm_kit",
+    "k_n_per_mm",
+    "stroke_mm",
+    "spring_force_n",
+    "spring_kind",
+    "pin_d_mm",
+    "input_torque_nm",
+    "cycles",
+    "wire_d_mm",
+    "mean_d_mm",
+    "n_active",
+    "mass_kg",
 }
 
 FLOAT_KEYS = {
@@ -187,6 +198,16 @@ FLOAT_KEYS = {
     "budget_usd",
     "payload_g",
     "flight_min",
+    "k_n_per_mm",
+    "stroke_mm",
+    "spring_force_n",
+    "pin_d_mm",
+    "input_torque_nm",
+    "cycles",
+    "wire_d_mm",
+    "mean_d_mm",
+    "n_active",
+    "mass_kg",
 }
 
 BOOL_KEYS = {"printed_frame", "cots_electronics", "confirm_kit"}

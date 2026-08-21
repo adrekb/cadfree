@@ -740,6 +740,8 @@ function renderMechanism(result) {
         `<span class="muted small">${escHtml(result.kind || '')}</span>` +
         (c.transmission_min_deg != null ? `<div class="prov">min transmission ${escHtml(String(Number(c.transmission_min_deg).toFixed(0)))}°</div>` : '') +
         (c.class ? `<div class="prov">${escHtml(c.class)}</div>` : '') +
+        (result.loads && result.loads.max_pin_n != null ? `<div class="prov">max pin ${escHtml(String(Number(result.loads.max_pin_n).toFixed(1)))} N</div>` : '') +
+        (result.loads && result.loads.T_hold_nm != null ? `<div class="prov">hold ${escHtml(String(Number(result.loads.T_hold_nm).toFixed(3)))} N·m</div>` : '') +
         `<p class="disclaimer">${escHtml(result.for_model || result.summary || '')}</p>` +
         (result.disclaimer ? `<p class="disclaimer">${escHtml(result.disclaimer)}</p>` : '') +
         '</div>';
@@ -1128,6 +1130,12 @@ async function sendChatText(text) {
                     renderFeasibility(ev.result || {});
                     if (ev.result && ev.result.catalog_class) {
                         renderVehicle('check_feasibility', ev.result.catalog_class);
+                    }
+                    if (ev.result && ev.result.catalog_spring) {
+                        renderVehicle('check_feasibility', ev.result.catalog_spring);
+                    }
+                    if (ev.result && ev.result.mechanism_loads) {
+                        renderMechanism({ verdict: ev.result.verdict, loads: ev.result.mechanism_loads, for_model: ev.result.summary, kind: 'loads' });
                     }
                 } else if (ev.type === 'error') {
                     appendMsg('error', ev.message);

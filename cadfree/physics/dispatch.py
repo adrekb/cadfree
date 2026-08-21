@@ -34,7 +34,7 @@ def probe_solvers() -> dict[str, Any]:
         "matlab": find_engine(),
         "kinematics": {
             "available": True,
-            "label": "Planar four-bar / slider-crank / open chain / gear pitch + convex-hull SAT",
+            "label": "Planar four-bar / slider-crank / spring force elements / pin statics + convex-hull SAT",
         },
         "first_order": {"available": True, "label": "Closed-form cantilever (always on)"},
         "topology": probe_generate(),
@@ -133,6 +133,20 @@ def run_solvers(
         results.append(run_fea(status))
     if "fluids" in want or "cfd" in want or "aero" in want:
         results.append(run_fluids(status, extra))
+    if "mechanism" in want or pack in {"spring", "mechanism"}:
+        from cadfree.kinematics.loads import analyze_mechanism_loads
+
+        report = analyze_mechanism_loads(project_id)
+        results.append(
+            {
+                "ok": bool(report.get("possible", True)),
+                "kind": "mechanism",
+                "solver": "planar_statics",
+                "report": report,
+                "iterate": [],
+                "disclaimer": report.get("disclaimer"),
+            }
+        )
     if "topology" in want or "generate" in want or "simp" in want:
         vf = extra.get("volfrac") or extra.get("target_mass_fraction")
         try:

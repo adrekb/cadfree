@@ -34,7 +34,7 @@ from cadfree.kinematics.geometry import (
 from cadfree.kinematics.slidercrank import solve_slider_crank
 from cadfree.store.db import db
 
-JOINT_KINDS = ("revolute", "prismatic", "fixed", "gear")
+JOINT_KINDS = ("revolute", "prismatic", "fixed", "gear", "spring", "torsion")
 
 
 def _new_id() -> str:
@@ -476,9 +476,11 @@ def pose_at(project_id: str, drive_deg: float, prev_c: np.ndarray | None = None)
         meta["kind"] = "slider-crank"
         if result.get("s") is not None:
             meta["C2"] = [float(result["s"]), 0.0]
-    elif joints:
+    elif [j for j in joints if j.get("kind") not in {"spring", "torsion"}]:
         moved = _open_chain_poses(rest, joints, float(drive_deg))
         meta = {"kind": "open-chain", "ok": True, "locked": False}
+    elif joints:
+        meta = {"kind": "spring", "ok": True, "locked": False}
     gears = [j for j in joints if j.get("kind") == "gear"]
     if gears and loop:
         for joint in gears:
@@ -767,12 +769,23 @@ def check_mechanism(
         "This is planar kinematics + convex-hull SAT, not SolidWorks Motion and not contact FEA. "
         "Do not claim a Motion study sign-off."
     )
+    from cadfree.kinematics.loads import analyze_mechanism_loads
+
+    loads = analyze_mechanism_loads(project_id)
+    if loads.get("skipped") is False and loads.get("possible") is False and verdict in {"works", "awkward"}:
+        verdict = "overloaded"
+        bits.append(loads.get("for_model") or "spring / pin load does not close")
+        for_model = (
+            f"Verdict: {verdict}. " + " ".join(bits) + " " + (loads.get("disclaimer") or "")
+        )
     return {
         **sweep,
         "ok": verdict in {"works", "awkward"},
         "verdict": verdict,
         "works": verdict == "works",
         "awkward": verdict == "awkward",
+        "overloaded": verdict == "overloaded",
+        "loads": loads if not loads.get("skipped") else None,
         "for_model": for_model,
         "comfort": {
             "kind": sweep.get("kind"),

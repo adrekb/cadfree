@@ -43,6 +43,8 @@ from cadfree.physics.engine import solve_formula
 from cadfree.store.db import db
 from cadfree.cots.kit import commit_cots_kit, search_parts
 from cadfree.cots.score import catalog_spec_overlay
+from cadfree.cots.springs import spring_spec_overlay
+from cadfree.kinematics.loads import mechanism_load_overlay
 
 
 def _row(project_id: str) -> dict[str, Any]:
@@ -249,24 +251,46 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         if not stl.is_file():
             stl = work / "model.stl"
         metrics = _metrics(p, stl.parent) if stl.is_file() else _metrics(p, work)
-        overlay = catalog_spec_overlay(constraints)
+        overlay_v = catalog_spec_overlay(constraints)
+        overlay_s = spring_spec_overlay(constraints)
+        overlay_m = mechanism_load_overlay(project_id, constraints)
+        overlays = [o for o in (overlay_v, overlay_s, overlay_m) if o]
+
+        def _apply_overlays(data: dict[str, Any]) -> dict[str, Any]:
+            if overlay_v:
+                data["catalog_class"] = overlay_v.get("score")
+            if overlay_s:
+                data["catalog_spring"] = overlay_s.get("score")
+            if overlay_m:
+                data["mechanism_loads"] = overlay_m.get("score")
+            if not overlays:
+                return data
+            for o in overlays:
+                data["checks"] = list(o.get("checks") or []) + list(data.get("checks") or [])
+                data["recommendations"] = list(o.get("recommendations") or []) + list(data.get("recommendations") or [])
+                data["assumptions"] = list(o.get("assumptions") or []) + list(data.get("assumptions") or [])
+            fail = next((o for o in overlays if o.get("possible") is False), None)
+            if fail:
+                data["possible"] = False
+                data["verdict"] = fail["verdict"]
+                data["summary"] = fail["summary"]
+            return data
 
         if metrics is None:
-            if overlay:
+            if overlays:
                 data = {
                     "ok": True,
-                    "possible": overlay["possible"],
-                    "verdict": overlay["verdict"],
-                    "summary": overlay["summary"],
-                    "checks": overlay["checks"],
-                    "recommendations": overlay["recommendations"],
+                    "possible": True,
+                    "verdict": "feasible",
+                    "summary": overlays[0]["summary"],
+                    "checks": [],
+                    "recommendations": [],
                     "mass": {},
                     "strength": {},
-                    "assumptions": overlay["assumptions"]
-                    + ["No mesh yet — this is the catalog class / spec score, not DFM on a solid."],
-                    "catalog_class": overlay["score"],
+                    "assumptions": ["No mesh yet — catalog / spec / pose statics, not DFM on a solid."],
                     "geometry": False,
                 }
+                data = _apply_overlays(data)
                 _save_build(project_id, {"metrics": {}}, data)
                 return data
             return {"ok": False, "error": "Build the model before checking feasibility."}
@@ -275,15 +299,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         data = report.to_dict()
         data["ok"] = True
         data["geometry"] = True
-        if overlay:
-            data["checks"] = list(overlay["checks"]) + list(data.get("checks") or [])
-            data["recommendations"] = list(overlay["recommendations"]) + list(data.get("recommendations") or [])
-            data["assumptions"] = list(overlay.get("assumptions") or []) + list(data.get("assumptions") or [])
-            data["catalog_class"] = overlay["score"]
-            if overlay["possible"] is False:
-                data["possible"] = False
-                data["verdict"] = overlay["verdict"]
-                data["summary"] = overlay["summary"]
+        data = _apply_overlays(data)
         if snap.get("expanded_count", 1) > 1:
             qty = next((b["qty"] for b in snap.get("bom") or [] if b["part_id"] == active["id"]), 1)
             mass = dict(data.get("mass") or {})

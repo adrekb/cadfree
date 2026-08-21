@@ -285,6 +285,14 @@ def _result(
         extra["sigma_MPa"] = value / 1e6
     if formula["id"] == "cantilever_deflection":
         extra["delta_mm"] = value * 1000.0
+    if formula["id"] == "wahl_stress":
+        extra["tau_MPa"] = value / 1e6
+    if formula["id"] == "pin_shear":
+        extra["tau_MPa"] = value / 1e6
+    if formula["id"] == "coil_rate":
+        extra["k_n_per_mm"] = value / 1000.0
+    if formula["id"] == "mass_spring_wn":
+        extra["fn_hz"] = value / (2.0 * math.pi)
     return {
         "ok": True,
         "kind": "analytical",
