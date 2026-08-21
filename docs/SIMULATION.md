@@ -49,11 +49,27 @@ The open stack that actually belongs behind CadQuery:
 
 Wiring the INP writer is in `cadfree/physics/fea.py`: the SI mesh copy
 always lands in `sim/fea/`. If `gmsh` and `ccx` are on PATH, Cadfree tet-meshes
-and runs a linear static. Fixtures and loads come from `set_load_path`
+**quadratic C3D10** (linear C3D4 is the named fallback if second-order meshing
+fails) and runs a linear static. Pass `values.converge=true` / `mesh_levels=3`
+for a coarse→fine family plus Richardson; a single mesh is never called
+"converged". Fixtures and loads come from `set_load_path`
 (pick-ids on the millimetre STL, PARAMS holes, or a named bbox-face fallback).
 FDM gets a tensile_z/tensile_xy knockdown on isotropic E — not mapped
 orthotropic. If gmsh/ccx are missing, the copy is still there and Agent mode
-will not invent von Mises.
+will not invent von Mises. Closed-form Roark / NAFEMS-cousin identities live
+in `cadfree/physics/validation.py` and run in CI without gmsh.
+
+## Rung 2b — thermal (lumped, then CalculiX heat)
+
+`service_temp_c` is now a feasibility check: surveyed `operating_temp_c`, or a
+**named** 80 °C assumption when environment is `hot / near motors`. Unsurveyed
+indoor temperature is a warning, not a pass.
+
+Handbook: Newton film (h = 10 W/(m²·K) still air unless surveyed), gray-body
+radiation to a large enclosure, lumped τ and Tss. `pack=heat` /
+`solvers=['thermal']`. If gmsh/ccx exist, `physics/thermal.py` writes a
+`*HEAT TRANSFER, STEADY STATE` deck (fixed NT or nodal CFLUX on the load set,
+`*FILM` on the fixture set). Not a cavity, not UL.
 
 ## CadQuery → SI copy → solvers → iterate
 
@@ -64,12 +80,17 @@ CadQuery will not run friction, FEA, or CFD. After `build_model`:
 2. Copy `part_si.stl` (and STEP when CadQuery exported one) into `sim/fea/` and
    `sim/fluids/`.
 3. Dispatch `run_solvers`:
-   - **analytical** — formula book (friction, PV, wear, pipe, aero, beams).
+   - **analytical** — formula book (friction, PV, wear, pipe, aero, beams, heat).
      LaTeX steps in the studio. Coefficients come from the book or the survey,
      not the LLM.
-   - **fea** — Gmsh + CalculiX if installed; otherwise the handoff folder only.
-   - **fluids** — handbook drag/Re from the same snapshot; OpenFOAM/Elmer/SU2
-     probed, never faked as a RANS field.
+   - **fea** — Gmsh + CalculiX C3D10 if installed; otherwise the handoff folder only.
+   - **thermal** — lumped Tss vs service_temp_c; CalculiX heat if installed.
+   - **fluids** — handbook drag/Re from the same snapshot; an OpenFOAM
+     `simpleFoam` + `snappyHexMesh` template always lands in
+     `sim/fluids/openfoam/`. If `simpleFoam` is on PATH we try a short run and
+     parse `forceCoeffs`. Cd is reported only when that file exists.
+   - **dynamics** — 1-DOF RK4 when k/m exist; Exudyn rigid DAE if
+     `pip install 'cadfree[motion]'` (`import exudyn`) works.
 4. `iterate` hints go back to PARAMS (`thickness_mm`, …). Rebuild, run again.
 
 ## Generative design (SIMP, not Fusion)
@@ -112,11 +133,14 @@ share a joint are ignored. This is not contact dynamics and not a Motion study.
   Four-bar: 9×9 holding torque + four pins. Slider-crank: two-force rod.
   “What force does this linkage put into the pin?” is that number, compared to
   pin shear if `pin_d_mm` is set.
-- 1-DOF `ωn = √(k/m)` for a suspension sag / return-spring. Not a quarter-car,
-  not `mẍ` of the whole assembly.
+- 1-DOF `ωn = √(k/m)` plus RK4 of that oscillator when k and m exist. If
+  `import exudyn` works (`pip install 'cadfree[motion]'`), `check_mechanism`
+  also runs a short rigid-body DAE (bbox cuboid inertia at 1000 kg/m³ — not
+  the mesh density). Not a quarter-car, not Adams Flex.
 
 The studio Play/Check strip and the agent `check_mechanism` tool share the
-kinematic verdict; pin/spring numbers ride on `loads`. `check_feasibility`
+kinematic verdict; pin/spring numbers ride on `loads`; RK4/Exudyn ride on
+`dynamics`. `check_feasibility`
 uses the same overlay as a 50 lb bracket (catalog + Wahl + solid height).
 
 ## What we will not do

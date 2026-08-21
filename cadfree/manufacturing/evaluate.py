@@ -439,6 +439,19 @@ def evaluate_capability(
             details={k: v for k, v in strength.items() if k != "message"},
         )
     )
+    from cadfree.physics.thermal import check_service_temp
+
+    thermal = check_service_temp(material, constraints)
+    checks.append(
+        Check(
+            "service_temp",
+            "Service temperature",
+            thermal.get("status") or "warn",
+            thermal.get("message") or "No thermal check.",
+            process=name,
+            details={k: v for k, v in thermal.items() if k not in {"message", "id"}},
+        )
+    )
     if not metrics.watertight:
         checks.append(
             Check(
@@ -497,6 +510,14 @@ def _verdict_from(
             )
         )
         verdict = "needs_spec_change"
+    elif "service_temp" in fail_ids:
+        recs.append(
+            Recommendation(
+                "material",
+                "Operating temperature exceeds this material's catalog service_temp_c. Use a higher-temp filament/stock or cool the part.",
+            )
+        )
+        verdict = "needs_material_change"
     elif "strength" in fail_ids:
         recs.append(
             Recommendation(
@@ -624,6 +645,7 @@ def evaluate(
         "FDM mass assumes shells plus infill, not a slicer.",
         "Build-volume check tries axis permutations; it does not pack multiple bodies.",
         "Passing checks means 'not physically impossible on this shop', not 'certified'.",
+        "service_temp_c is catalog continuous-use, not a heat-deflection coupon. Unsurveyed operating temperature is a warning, not a pass.",
     ]
     load = parse_load_n(constraints)
     if load:

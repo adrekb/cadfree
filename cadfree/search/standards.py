@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 import httpx
 
 from cadfree.cots.catalog import HOBBY_VENDOR_DOMAINS
+from cadfree.store.db import get_setting
 
 LOG = logging.getLogger(__name__)
 

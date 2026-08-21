@@ -443,7 +443,9 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             mats = caps[0].get("materials") or []
             if mats and not constraints.get("material_id"):
                 material = mats[0] if isinstance(mats[0], str) else mats[0].get("id", "petg")
-        return simulate(metrics, material, constraints, process_kind=kind, prefer=prefer)
+        return simulate(
+            metrics, material, constraints, process_kind=kind, prefer=prefer, project_id=project_id
+        )
 
     def matlab_run(code: str) -> dict[str, Any]:
         return run_matlab(code, workdir=project_dir(project_id) / "matlab")

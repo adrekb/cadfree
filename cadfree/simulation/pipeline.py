@@ -44,8 +44,8 @@ def probe() -> dict[str, Any]:
         "calculix": {"available": bool(ccx), "path": ccx},
         "kinematics": {
             "available": True,
-            "label": "Planar four-bar / open chain / gear pitch + AABB clash",
-            "disclaimer": "Not CadQuery. Not SolidWorks Motion. Convex/AABB interference, not contact dynamics.",
+            "label": "Planar four-bar / open chain / gear pitch + AABB clash; 1-DOF RK4; Exudyn if installed",
+            "disclaimer": "Not CadQuery. Not SolidWorks Motion. Convex/AABB interference, not contact dynamics unless Exudyn ran.",
         },
         "solvers": probe_solvers(),
     }
@@ -129,6 +129,7 @@ def simulate(
     *,
     process_kind: str = "fdm",
     prefer: str = "auto",
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     """Run the best available rung. Never pretends a missing solver ran."""
     status = probe()
@@ -151,12 +152,26 @@ def simulate(
 
     fea_ready = status["gmsh"]["available"] and status["calculix"]["available"]
     if prefer == "fea" or (prefer == "auto" and fea_ready):
-        if fea_ready:
+        if fea_ready and project_id:
+            from cadfree.physics.fea import run_fea
+            from cadfree.physics.snapshot import write_si_status
+
+            si = write_si_status(project_id)
+            fea = run_fea(si, values={"converge": bool(constraints.get("converge"))})
+            fea["rung"] = "calculix"
+            rungs.append(fea)
+            if fea.get("ok"):
+                used = "calculix"
+        elif fea_ready:
             rungs.append(
                 {
                     "rung": "calculix",
                     "ok": False,
-                    "error": "Gmsh+CalculiX are installed, but the INP writer is not wired in this build yet. Use MATLAB/first-order, or see docs/SIMULATION.md.",
+                    "error": (
+                        "Gmsh+CalculiX are installed and the INP writer in physics.fea is wired. "
+                        "This older helper has no project SI snapshot — call run_solvers "
+                        "solvers=['fea'] (C3D10 + optional mesh convergence)."
+                    ),
                 }
             )
         elif prefer == "fea":
@@ -175,7 +190,8 @@ def simulate(
         "material_id": (material if isinstance(material, str) else material.get("id")),
         "disclaimer": (
             "Passing a simulation rung means the part is not obviously impossible. "
-            "It is not a lab coupon, not anisotropic FDM FEA, and not a sign-off."
+            "It is not a lab coupon, not anisotropic FDM FEA, and not a sign-off. "
+            "Quadratic tets (C3D10) are the FEA default when gmsh/ccx run."
         ),
     }
 
