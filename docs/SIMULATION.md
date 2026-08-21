@@ -96,6 +96,19 @@ CadQuery will not run friction, FEA, or CFD. After `build_model`:
      `pip install 'cadfree[motion]'` (`import exudyn`) works.
 4. `iterate` hints go back to PARAMS (`thickness_mm`, …). Rebuild, run again.
 
+## Impeller / turbo (`pack=turbo`)
+
+Setup, PATH gotchas, and the studio loop: **[TURBO.md](TURBO.md)**.
+
+Short version: `draft_impeller` + `ask_survey template=impeller` + `run_solvers pack=turbo`.
+
+- Meanline (Euler / Wiesner / NPSHa / hoop) always runs.
+- CalculiX `*DLOAD, CENTRIF` if `gmsh` and `ccx` are on PATH.
+- OpenFOAM MRF if `blockMesh`, `snappyHexMesh`, `topoSet`, and `simpleFoam` are on PATH. **Source the OpenFOAM `bashrc` in the same shell as Cadfree** or the probe stays false.
+- OpenRadioss `/LOAD/CENTRI` only when you ask `solvers=['radioss']` and the starter/engine binaries are on PATH.
+
+No volute, no invented NPSHr, no invented \(\eta\).
+
 ## Generative design (SIMP, not Fusion)
 
 Autodesk Generative Design is a cloud product. Cadfree’s analogue is the
