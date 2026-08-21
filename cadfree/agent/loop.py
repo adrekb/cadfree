@@ -29,6 +29,7 @@ PLAN_BLOCKED = {
     "commit_cots_kit",
     "set_load_path",
     "optimize_params",
+    "draft_from_image",
 }
 
 
@@ -409,7 +410,10 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "write_cadquery",
-            "Replace a part's CadQuery script. Must assign `result` and keep a PARAMS dict. Optional part_id (defaults to the active part). Do not copy-paste 40 bodies — use place_instance patterns.",
+            "CadQuery is the geometry language. Assign the solid to `result`. "
+            "Keep a PARAMS dict. Optional part_id (defaults to the active part). "
+            "A script that `import build123d` (and not cadquery) runs on the same OCP kernel. "
+            "Do not copy-paste 40 bodies — use place_instance patterns.",
             {
                 "type": "object",
                 "properties": {
@@ -566,6 +570,77 @@ def _bind_tools(project_id: str) -> None:
                 "required": ["material_id"],
             },
             handlers["lookup_material"],
+        ),
+        Tool(
+            "verify_against_image",
+            "GIFT-style inference loop, not GIFT training: rasterize the built STL "
+            "(orthographic +x/+y/+z silhouettes) and score IoU against an attached drawing "
+            "or photo. Returns iterate like FEA when the silhouette is a miss. "
+            "PNG works without extra deps; JPEG needs Pillow. Never invent an IoU.",
+            {
+                "type": "object",
+                "properties": {
+                    "attachment_id": {"type": "string"},
+                    "part_id": {"type": "string"},
+                },
+            },
+            handlers["verify_against_image"],
+        ),
+        Tool(
+            "export_urdf",
+            "Write sim/urdf/robot.urdf from unique instances + joints. mm→m, bbox inertia. "
+            "gear/spring/torsion become fixed with a note — they are not URDF joint types. "
+            "Not ROS control, not Adams.",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            handlers["export_urdf"],
+        ),
+        Tool(
+            "export_dxf",
+            "ASCII DXF of the convex hull of the largest-area STL projection. "
+            "For laser/waterjet as a silhouette, not a shop drawing or unfold.",
+            {
+                "type": "object",
+                "properties": {"part_id": {"type": "string"}},
+            },
+            handlers["export_dxf"],
+        ),
+        Tool(
+            "list_cad_refs",
+            "Copyable @cad[face:N] / @cad[feature:id] / @cad[part:…] / @cad[instance:…] / "
+            "@cad[joint:…] handles. Face = stamped STL pick-id. Not OCCT TNaming.",
+            {
+                "type": "object",
+                "properties": {"part_id": {"type": "string"}},
+            },
+            handlers["list_cad_refs"],
+        ),
+        Tool(
+            "resolve_cad_ref",
+            "Look up one @cad[...] handle from list_cad_refs or a clicked pick.",
+            {
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string"},
+                    "part_id": {"type": "string"},
+                },
+                "required": ["ref"],
+            },
+            handlers["resolve_cad_ref"],
+        ),
+        Tool(
+            "draft_from_image",
+            "Optional CAD-Coder image→CadQuery. Needs cadcoder_base_url (OpenAI-compatible). "
+            "Writes the script (mutating). No URL / no GPU → one sentence, do not invent CadQuery. "
+            "Then build_model and verify_against_image.",
+            {
+                "type": "object",
+                "properties": {
+                    "attachment_id": {"type": "string"},
+                    "part_id": {"type": "string"},
+                },
+            },
+            handlers["draft_from_image"],
+            mutating=True,
         ),
     ]
     from cadfree.agent.plugins import Plugin

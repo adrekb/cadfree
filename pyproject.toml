@@ -19,6 +19,9 @@ dependencies = [
 cad = [
     "cadquery>=2.4.0",
 ]
+build123d = [
+    "build123d>=0.8.0",
+]
 physics = [
     "sympy>=1.13",
     "scipy>=1.11",
