@@ -189,3 +189,83 @@ def test_impeller_survey_template():
     spec = questions_for_template("impeller")
     ids = [q["id"] for q in spec["questions"]]
     assert "n_rpm" in ids and "Q_lpm" in ids
+
+
+def test_mrf_case_is_complete_and_runnable_by_hand(tmp_path):
+    from cadfree.physics.mrf import write_mrf_case
+
+    stl = tmp_path / "part_si.stl"
+    stl.write_text("solid x\nendsolid x\n", encoding="utf-8")
+    out = write_mrf_case(
+        tmp_path / "case",
+        stl=stl,
+        omega=2.0 * math.pi * 3000.0 / 60.0,
+        r2=0.05,
+        blade_h=0.016,
+        q_m3s=0.001,
+        rho=997.0,
+        nu=1.0e-6,
+    )
+    case = tmp_path / "case"
+    for rel in (
+        "system/blockMeshDict",
+        "system/snappyHexMeshDict",
+        "system/topoSetDict",
+        "system/fvSchemes",
+        "system/fvSolution",
+        "system/controlDict",
+        "constant/MRFProperties",
+        "constant/transportProperties",
+        "constant/turbulenceProperties",
+        "constant/triSurface/impeller.stl",
+        "0/U",
+        "0/p",
+        "Allrun",
+    ):
+        assert (case / rel).is_file(), rel
+    mrf = (case / "constant" / "MRFProperties").read_text(encoding="utf-8")
+    assert "cellZone" in mrf and "rotor" in mrf and "omega" in mrf
+    topo = (case / "system" / "topoSetDict").read_text(encoding="utf-8")
+    assert "cylinderToCell" in topo
+    u = (case / "0" / "U").read_text(encoding="utf-8")
+    assert "flowRateInletVelocity" in u and "rotatingWallVelocity" in u
+    ctrl = (case / "system" / "controlDict").read_text(encoding="utf-8")
+    assert "surfaceFieldValue" in ctrl and "areaAverage" in ctrl and "forces" in ctrl
+    assert not out["gaps"]
+
+
+def test_mrf_never_claims_head_without_a_run(tmp_path):
+    from cadfree.physics.mrf import probe_mrf, run_mrf
+
+    status = {
+        "paths": {"sim": str(tmp_path)},
+        "part": {"files": {}, "bbox_m": [0.1, 0.1, 0.02]},
+        "environment": {"n_rpm": 3000.0, "rho": 997.0, "mu_visc": 1.0e-3},
+        "inputs": {"n_rpm": 3000.0, "Q": 0.001},
+        "cadquery": {"params_mm": {"r2_mm": 50.0, "hub_h_mm": 16.0}},
+        "constraints": {},
+    }
+    out = run_mrf(status)
+    assert out["ok"] is False
+    assert "head_static_m" not in out
+    assert out["error"]
+    probe = probe_mrf()
+    if not probe["available"]:
+        assert "blockMesh" in probe["install_hint"] or "OpenFOAM" in probe["install_hint"]
+
+
+def test_mrf_parsers_on_synthetic_output(tmp_path):
+    from cadfree.physics.mrf import _last_value, _moment_z
+
+    dat = tmp_path / "surfaceFieldValue.dat"
+    dat.write_text(
+        "# Time areaAverage(p)\n10 -1.5\n20 -2.5\n200 -4.905\n",
+        encoding="utf-8",
+    )
+    assert _last_value(dat) == -4.905
+    mom = tmp_path / "moment.dat"
+    mom.write_text(
+        "# Time (total_x total_y total_z) ...\n200 (0.01 0.02 0.35) (0 0 0.3) (0.01 0.02 0.05)\n",
+        encoding="utf-8",
+    )
+    assert _moment_z(mom) == 0.35

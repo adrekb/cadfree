@@ -101,8 +101,10 @@ Rules:
   head + Wiesner slip + SI Ns + NPSHa + thin-ring hoop, then CalculiX
   `*DLOAD, CENTRIF` (ω² about +Z, hub fixture). `solvers=['radioss']` writes
   OpenRadioss `/LOAD/CENTRI` decks — explicit burst/containment if the engine
-  runs, not CFD. Fluids on pack=turbo is an MRF rotating-frame template on the
-  full 360° STL, not a periodic sector and not a pump curve. `optimize_params`
+  runs, not CFD. Fluids on pack=turbo is a complete MRF case (blockMesh →
+  snappyHexMesh → topoSet rotor cylinder → simpleFoam) on the full 360° STL —
+  no volute, not a periodic sector, not a pump curve. Head/shaft work only if
+  surfaceFieldValue/forces parse. `optimize_params`
   goal=head|hoop searches meanline PARAMS without rebuilding the mesh. Never
   invent NPSHr, hydraulic efficiency, or a burst factor that is not in results[].
 - GENERATIVE DESIGN: Autodesk Fusion Generative Design is a cloud product.

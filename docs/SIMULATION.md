@@ -89,6 +89,9 @@ CadQuery will not run friction, FEA, or CFD. After `build_model`:
      `simpleFoam` + `snappyHexMesh` template always lands in
      `sim/fluids/openfoam/`. If `simpleFoam` is on PATH we try a short run and
      parse `forceCoeffs`. Cd is reported only when that file exists.
+     `pack=turbo` instead writes a complete MRF case in `sim/fluids/mrf/`
+     (blockMesh → snappyHexMesh → topoSet rotor cylinder → simpleFoam).
+     Head/shaft work only if `surfaceFieldValue` / `forces` parse. No volute.
    - **dynamics** — 1-DOF RK4 when k/m exist; Exudyn rigid DAE if
      `pip install 'cadfree[motion]'` (`import exudyn`) works.
 4. `iterate` hints go back to PARAMS (`thickness_mm`, …). Rebuild, run again.

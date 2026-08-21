@@ -16,6 +16,7 @@ from cadfree.physics.book import BY_ID, PACKS, lookup_formula
 from cadfree.physics.engine import solve_formula, sympy_status
 from cadfree.physics.fea import probe_fea, run_fea
 from cadfree.physics.fluids import probe_fluids, run_fluids
+from cadfree.physics.mrf import probe_mrf
 from cadfree.physics.radioss import probe_radioss, run_radioss
 from cadfree.physics.snapshot import bind_formula, sim_dir, write_si_status
 from cadfree.physics.thermal import probe_thermal, run_thermal
@@ -35,6 +36,7 @@ def probe_solvers() -> dict[str, Any]:
         "sympy": sympy_status(),
         "fea": fea,
         "fluids": fluids,
+        "mrf": probe_mrf(),
         "radioss": radioss,
         "thermal": probe_thermal(),
         "matlab": find_engine(),
