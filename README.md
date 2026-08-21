@@ -11,14 +11,14 @@ The UI is **Carrot’s** glass workspace (same stylesheet, Monaco editor, Plan/A
 - **Workshop** — printers, mills, lasers, molds, wood, metal AM, with real envelopes and the filaments/stock you have
 - **Agent mode** — writes CadQuery, rebuilds, checks feasibility, can run **MATLAB or GNU Octave** (same contract as Carrot’s academia pack)
 - **You can edit the CAD** — `PARAMS` sliders rebuild without the model; Monaco edits the script directly; Plan mode cannot write
-- **Honest simulation rungs** — first-order always; MATLAB beam theory if installed; Gmsh+CalculiX probed, never faked. See [docs/SIMULATION.md](docs/SIMULATION.md)
+- **Honest simulation rungs** — first-order always; MATLAB beam theory if installed; Gmsh+CalculiX **C3D10** (+ optional mesh Richardson); lumped thermal vs `service_temp_c`; OpenFOAM case templates; 1-DOF RK4 / Exudyn if installed. Missing solvers are named, never faked. See [docs/SIMULATION.md](docs/SIMULATION.md)
 - **Survey before CAD** — the agent must not guess load direction, fasteners, environment, or which ISO/ASTM applies. It opens a form in the studio and waits.
 - **Standards search** — ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, plus manufacturer datasheets. Official bodies rank first. Paywalled PDFs are cited, never invented. Optional Brave Search key in Settings (`pip install -e ".[search]"` for the DuckDuckGo library).
 - **Adjustable thinking** — Think **off / low / high / max**. High is the default. DeepSeek is **not vision-native**.
 - **Vision** — OpenAI (`gpt-4.1`, `gpt-4o`), Anthropic, Gemini (`gemini-2.5-flash` / `pro`), and OpenRouter vision models read drawings/photos attached in chat. Default provider is OpenAI, not DeepSeek.
 - **Assemblies** — shop-scale: unique parts (≤32 solids) + GPU-instanced placements with linear/grid/circular/mirror patterns (cap 400). Nested `parent_id` multiplies children. Fasteners are BOM-only.
-- **Linkages** — CadQuery will not simulate motion. Joints (revolute / prismatic / gear / spring / torsion) + planar four-bar + slider-crank + convex-hull SAT along a drive sweep. Pin forces are planar quasi-static (holding torque, Wahl, solid height). 1-DOF ωn for a latch/suspension. Not SolidWorks Motion, not Adams.
-- **Physics loop** — CadQuery authors the solid. `set_load_path` names fixtures (picked faces / holes; bbox is the named fallback). `optimize_params` searches PARAMS against first-order feasibility (no CadQuery rebuild per eval); FEA verifies the winner. `run_solvers` snapshots it in SI, copies the mesh into packaged solvers (formula book always; Gmsh+CalculiX if present; fluids/aero handbook + CFD handoff), then `iterate` PARAMS and rebuild. Math is LaTeX in the studio. Not Ansys.
+- **Linkages** — CadQuery will not simulate motion. Joints (revolute / prismatic / gear / spring / torsion) + planar four-bar + slider-crank + convex-hull SAT along a drive sweep. Pin forces are planar quasi-static (holding torque, Wahl, solid height). 1-DOF ωn + RK4; Exudyn rigid DAE if `cadfree[motion]` is installed. Not SolidWorks Motion, not Adams.
+- **Physics loop** — CadQuery authors the solid. `set_load_path` names fixtures (picked faces / holes; bbox is the named fallback). `optimize_params` searches PARAMS against first-order feasibility (no CadQuery rebuild per eval); FEA verifies the winner. `run_solvers` snapshots it in SI, copies the mesh into packaged solvers (formula book always; Gmsh+CalculiX C3D10 if present; thermal; fluids handbook + OpenFOAM template), then `iterate` PARAMS and rebuild. Math is LaTeX in the studio. Not Ansys.
 - **One feasibility loop** — survey what you don't know, `check_feasibility`, refuse or design. Whoop vs 5-inch is catalog rows (`cots_classes`), the same way PETG vs PLA is catalog data — not a special agent. `$80` will not buy a 50 mph 5-inch; the tool names the smallest change. Then `search_parts` and CadQuery around those envelopes. Electronics stay purchased. `template=drone` is a form shortcut.
 - **MCP** — the same tools on `POST /mcp`, protocol **2026-07-28**, Streamable HTTP, **no sessions**. Pass `project_id` on every `tools/call`. Surveys use `input_required` (MRTR). Not the 2024 initialize handshake.
 - **Generative design** — Fusion Generative Design analogue: Sigmund / Liu–Tovar **SIMP** on a voxel copy of that SI mesh (`generate_designs` / studio **Generate**). Mill 2.5-D and AM overhang filters. Organic STL candidates are imported meshes — CadQuery is not rewritten. Needs `pip install 'cadfree[physics]'` (scipy). Not Autodesk cloud, not nTopology.
@@ -33,6 +33,8 @@ pip install -e ".[dev]"
 pip install cadquery
 # optional formula CAS + SIMP generative design:
 pip install -e ".[physics]"
+# optional Exudyn rigid-body dynamics:
+pip install -e ".[motion]"
 # optional MATLAB stand-in:
 # sudo apt install octave
 

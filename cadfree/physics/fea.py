@@ -1,16 +1,30 @@
 """Gmsh + CalculiX from the SI mesh copy. CadQuery does not run this.
 
+Default mesh is quadratic tets (C3D10). Linear C3D4 is the fallback if Gmsh
+refuses second-order on the STL, and an explicit order=1 switch for a fast
+check. Mesh-convergence (2–3 characteristic lengths + Richardson) is opt-in
+via values.converge / values.mesh_levels — we never invent a missing level.
+
 If gmsh/ccx are missing the mesh copy and job card still land in sim/fea/
 so something that *is* installed can pick them up. We never claim a solve.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from cadfree.physics.convergence import char_lengths, richardson
+
+DISCLAIMER = (
+    "Linear static, isotropic E. Quadratic tets (C3D10) when Gmsh succeeds; "
+    "linear C3D4 is the named fallback. Fixture/load are bbox faces or named "
+    "picks, not mate-face contact. Not anisotropic FDM. Not a sign-off."
+)
 
 
 def probe_fea() -> dict[str, Any]:
@@ -20,8 +34,9 @@ def probe_fea() -> dict[str, Any]:
         "available": bool(gmsh and ccx),
         "gmsh": {"available": bool(gmsh), "path": gmsh},
         "calculix": {"available": bool(ccx), "path": ccx},
-        "label": "Gmsh tet mesh + CalculiX linear static",
+        "label": "Gmsh tet mesh (C3D10 default) + CalculiX linear static",
         "install_hint": "Install `gmsh` and CalculiX `ccx` on PATH for mesh FEA.",
+        "elements": "C3D10 quadratic tets; C3D4 if second-order meshing fails.",
     }
 
 
@@ -31,13 +46,17 @@ def _job_dir(project_sim: Path) -> Path:
     return path
 
 
-def _write_geo(stl: Path, geo: Path, char_len: float) -> None:
+def _write_geo(stl: Path, geo: Path, char_len: float, order: int = 2) -> None:
+    order = 2 if int(order) >= 2 else 1
     geo.write_text(
         f"""// Cadfree FEA job. Geometry is SI metres from the CadQuery STL copy.
 Merge "{stl.as_posix()}";
 Mesh.CharacteristicLengthMax = {char_len:.6g};
 Mesh.CharacteristicLengthMin = {char_len / 4.0:.6g};
 Mesh.Algorithm3D = 1;
+Mesh.ElementOrder = {order};
+Mesh.SecondOrderLinear = 0;
+Mesh.HighOrderOptimize = {1 if order == 2 else 0};
 Mesh 3;
 """,
         encoding="utf-8",
@@ -84,6 +103,8 @@ def _append_ccx(
         "S",
         "*EL PRINT, ELSET=Eall",
         "S",
+        "*NODE PRINT, NSET=Nall",
+        "U",
         "*END STEP",
         "",
     ]
@@ -112,6 +133,15 @@ def _parse_nodes(inp: Path) -> list[tuple[int, float, float, float]]:
             except ValueError:
                 continue
     return nodes
+
+
+def _element_kind(inp: Path) -> str:
+    text = inp.read_text(encoding="utf-8", errors="ignore").upper()
+    if "C3D10" in text or "TETRA10" in text:
+        return "C3D10"
+    if "C3D4" in text or "TETRA4" in text:
+        return "C3D4"
+    return "unknown"
 
 
 def _parse_stress(dat: Path) -> dict[str, float]:
@@ -148,6 +178,126 @@ def _parse_stress(dat: Path) -> dict[str, float]:
     return {"von_mises_max": max_vm, "u_max": max_u}
 
 
+def _gmsh_mesh(gmsh: str, geo: Path, inp: Path, dest: Path, timeout: int) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [gmsh, str(geo), "-3", "-format", "inp", "-o", str(inp)],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _one_level(
+    *,
+    dest: Path,
+    stl_path: Path,
+    status: dict[str, Any],
+    spec: dict[str, Any] | None,
+    probe: dict[str, Any],
+    char: float,
+    order: int,
+    timeout: int,
+    tag: str,
+) -> dict[str, Any]:
+    work = dest / tag
+    work.mkdir(parents=True, exist_ok=True)
+    geo = work / "part.geo"
+    inp = work / "part.inp"
+    used_order = 2 if order >= 2 else 1
+    _write_geo(stl_path, geo, char, order=used_order)
+    gmsh = probe["gmsh"]["path"]
+    try:
+        gmsh_run = _gmsh_mesh(gmsh, geo, inp, work, timeout)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"gmsh timed out after {timeout}s", "char_m": char, "order": used_order}
+    if (not inp.is_file() or gmsh_run.returncode != 0) and used_order == 2:
+        used_order = 1
+        _write_geo(stl_path, geo, char, order=1)
+        try:
+            gmsh_run = _gmsh_mesh(gmsh, geo, inp, work, timeout)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": f"gmsh timed out after {timeout}s", "char_m": char, "order": 1}
+        fallback_note = "Quadratic tet mesh failed; fell back to linear C3D4 on this level."
+    else:
+        fallback_note = None
+    if not inp.is_file() or gmsh_run.returncode != 0:
+        return {
+            "ok": False,
+            "error": (gmsh_run.stderr or gmsh_run.stdout or "gmsh failed")[-2000:],
+            "char_m": char,
+            "order": used_order,
+            "gmsh_log": (gmsh_run.stdout or "")[-1000:],
+        }
+    nodes = _parse_nodes(inp)
+    resolved = _append_ccx(inp, status, nodes, spec=spec)
+    element = _element_kind(inp)
+    if not probe["calculix"]["available"]:
+        return {
+            "ok": False,
+            "error": "Gmsh wrote an INP, but CalculiX `ccx` is not on PATH.",
+            "inp": str(inp),
+            "nodes": len(nodes),
+            "element": element,
+            "char_m": char,
+            "order": used_order,
+            "bcs": resolved,
+        }
+    ccx = probe["calculix"]["path"]
+    try:
+        ccx_run = subprocess.run(
+            [ccx, "part"],
+            cwd=str(work),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "error": f"ccx timed out after {timeout}s",
+            "char_m": char,
+            "order": used_order,
+            "nodes": len(nodes),
+            "element": element,
+        }
+    dat = work / "part.dat"
+    parsed = _parse_stress(dat) if dat.is_file() else {}
+    vm = parsed.get("von_mises_max") or 0.0
+    return {
+        "ok": ccx_run.returncode == 0 and vm > 0,
+        "char_m": char,
+        "order": used_order,
+        "element": element,
+        "nodes": len(nodes),
+        "von_mises_max": vm,
+        "u_max_m": parsed.get("u_max"),
+        "inp": str(inp),
+        "handoff": str(work),
+        "bcs": resolved,
+        "fallback_note": fallback_note,
+        "stdout": (ccx_run.stdout or "")[-1500:],
+        "error": None if ccx_run.returncode == 0 else (ccx_run.stderr or "ccx failed")[-2000:],
+    }
+
+
+def _copy_geometry(status: dict[str, Any], dest: Path) -> Path | None:
+    files = (status.get("part") or {}).get("files") or {}
+    stl = files.get("stl_m") or ""
+    stl_path = dest / "part_si.stl"
+    if stl and Path(stl).is_file():
+        if Path(stl).resolve() != stl_path.resolve():
+            shutil.copy2(stl, stl_path)
+        else:
+            stl_path = Path(stl)
+    pick_mm = (status.get("pick") or {}).get("stl_mm") or files.get("stl_mm")
+    if pick_mm and Path(pick_mm).is_file():
+        shutil.copy2(pick_mm, dest / "part_mm.stl")
+    return stl_path if stl_path.is_file() else None
+
+
 def run_fea(
     status: dict[str, Any],
     *,
@@ -163,22 +313,21 @@ def run_fea(
     spec = extra.get("fea_bcs") if isinstance(extra.get("fea_bcs"), dict) else extra
     if not normalize_fea_bcs(spec).get("fix") and not normalize_fea_bcs(spec).get("load"):
         spec = status.get("fea_bcs")
-    files = (status.get("part") or {}).get("files") or {}
-    stl = files.get("stl_m") or ""
-    stl_path = dest / "part_si.stl"
-    if stl and Path(stl).is_file():
-        if Path(stl).resolve() != stl_path.resolve():
-            shutil.copy2(stl, stl_path)
-        else:
-            stl_path = Path(stl)
-    pick_mm = (status.get("pick") or {}).get("stl_mm") or files.get("stl_mm")
-    if pick_mm and Path(pick_mm).is_file():
-        shutil.copy2(pick_mm, dest / "part_mm.stl")
+    stl_path = _copy_geometry(status, dest)
     bbox = (status.get("part") or {}).get("bbox_m") or [0.04, 0.04, 0.01]
-    char = max(min(bbox) / 6.0 if bbox else 0.004, 0.0008)
-    geo = dest / "part.geo"
-    if stl_path.is_file():
-        _write_geo(stl_path, geo, char)
+    try:
+        order = int(extra.get("order") or extra.get("element_order") or 2)
+    except (TypeError, ValueError):
+        order = 2
+    converge = bool(extra.get("converge") or extra.get("mesh_convergence"))
+    try:
+        n_levels = int(extra.get("mesh_levels") or (3 if converge else 1))
+    except (TypeError, ValueError):
+        n_levels = 1 if not converge else 3
+    n_levels = max(1, min(n_levels, 3))
+    if converge:
+        n_levels = max(n_levels, 2)
+    lengths = char_lengths(bbox, n_levels=n_levels, base=extra.get("char_m"))
     preview = resolve_bcs(status, [], spec=spec)
     bcs = {
         "fix": preview.get("fix_source"),
@@ -190,87 +339,61 @@ def run_fea(
         "notes": preview.get("notes"),
         "spec": preview.get("spec"),
     }
-    (dest / "bcs.json").write_text(
-        __import__("json").dumps(bcs, indent=2, default=str), encoding="utf-8"
-    )
+    (dest / "bcs.json").write_text(json.dumps(bcs, indent=2, default=str), encoding="utf-8")
     handoff = {
         "ok": False,
         "kind": "fea",
         "solver": "calculix",
         "label": probe["label"],
         "handoff": str(dest),
-        "geometry": str(stl_path) if stl_path.is_file() else None,
+        "geometry": str(stl_path) if stl_path else None,
+        "order_requested": 2 if order >= 2 else 1,
+        "mesh_levels": lengths,
         "bcs": bcs,
-        "disclaimer": preview.get("disclaimer")
-        or (
-            "Linear static, isotropic E. Fixture/load are bbox faces, not your mate faces. "
-            "Not anisotropic FDM. Not a sign-off."
-        ),
+        "disclaimer": preview.get("disclaimer") or DISCLAIMER,
     }
-    if not stl_path.is_file():
+    if stl_path is None:
         handoff["error"] = "No SI STL copy. build_model so CadQuery can tessellate the solid first."
         return handoff
     if not probe["gmsh"]["available"]:
         handoff["error"] = probe["install_hint"]
         return handoff
 
-    inp = dest / "part.inp"
-    gmsh = probe["gmsh"]["path"]
-    try:
-        gmsh_run = subprocess.run(
-            [gmsh, str(geo), "-3", "-format", "inp", "-o", str(inp)],
-            cwd=str(dest),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+    levels: list[dict[str, Any]] = []
+    per_timeout = timeout if n_levels == 1 else max(45, timeout // n_levels)
+    for i, char in enumerate(lengths):
+        levels.append(
+            _one_level(
+                dest=dest,
+                stl_path=stl_path,
+                status=status,
+                spec=spec,
+                probe=probe,
+                char=char,
+                order=order,
+                timeout=per_timeout,
+                tag=f"L{i}",
+            )
         )
-    except subprocess.TimeoutExpired:
-        handoff["error"] = f"gmsh timed out after {timeout}s"
-        return handoff
-    if not inp.is_file() or gmsh_run.returncode != 0:
-        handoff["error"] = (gmsh_run.stderr or gmsh_run.stdout or "gmsh failed")[-2000:]
-        handoff["gmsh_log"] = (gmsh_run.stdout or "")[-1000:]
-        return handoff
 
-    nodes = _parse_nodes(inp)
-    resolved = _append_ccx(inp, status, nodes, spec=spec)
-    bcs = resolved
-    (dest / "bcs.json").write_text(
-        __import__("json").dumps(bcs, indent=2, default=str), encoding="utf-8"
-    )
-    handoff["bcs"] = {
-        "fix": f"{len(resolved.get('fix_nodes') or [])} nodes ({resolved.get('fix_source')})",
-        "load": f"{len(resolved.get('load_nodes') or [])} nodes ({resolved.get('load_source')})",
-        "direction": resolved.get("direction"),
-        "source": resolved.get("source"),
-        "F_N": resolved.get("F_N"),
-        "notes": resolved.get("notes"),
-    }
-    handoff["disclaimer"] = resolved.get("disclaimer") or handoff["disclaimer"]
-    if not probe["calculix"]["available"]:
-        handoff["error"] = "Gmsh wrote an INP, but CalculiX `ccx` is not on PATH."
-        handoff["inp"] = str(inp)
-        return handoff
+    ok_levels = [lv for lv in levels if lv.get("ok")]
+    winner = ok_levels[-1] if ok_levels else levels[-1]
+    resolved = winner.get("bcs") or {}
+    if resolved:
+        (dest / "bcs.json").write_text(json.dumps(resolved, indent=2, default=str), encoding="utf-8")
+        handoff["bcs"] = {
+            "fix": f"{len(resolved.get('fix_nodes') or [])} nodes ({resolved.get('fix_source')})",
+            "load": f"{len(resolved.get('load_nodes') or [])} nodes ({resolved.get('load_source')})",
+            "direction": resolved.get("direction"),
+            "source": resolved.get("source"),
+            "F_N": resolved.get("F_N"),
+            "notes": resolved.get("notes"),
+        }
+        handoff["disclaimer"] = resolved.get("disclaimer") or handoff["disclaimer"]
 
-    ccx = probe["calculix"]["path"]
-    try:
-        ccx_run = subprocess.run(
-            [ccx, "part"],
-            cwd=str(dest),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        handoff["error"] = f"ccx timed out after {timeout}s"
-        return handoff
-    dat = dest / "part.dat"
-    parsed = _parse_stress(dat) if dat.is_file() else {}
     allow = float((status.get("material") or {}).get("allowable") or 0) or 1.0
     sf_req = float((status.get("load") or {}).get("safety_factor") or 2.0)
-    vm = parsed.get("von_mises_max") or 0.0
+    vm = float(winner.get("von_mises_max") or 0.0)
     sf = allow / vm if vm else None
     iterate = []
     if sf is not None and sf < sf_req:
@@ -281,20 +404,65 @@ def run_fea(
                 "scale": (sf_req / max(sf, 0.05)) ** 0.5,
             }
         )
-    return {
-        "ok": ccx_run.returncode == 0 and vm > 0,
+    conv = None
+    if n_levels > 1:
+        conv = {
+            "von_mises": richardson(
+                [float(lv["von_mises_max"]) for lv in ok_levels],
+                quantity="von_mises_Pa",
+            ),
+            "u_max": richardson(
+                [float(lv.get("u_max_m") or 0.0) for lv in ok_levels],
+                quantity="u_max_m",
+            ),
+        }
+        (dest / "convergence.json").write_text(json.dumps(conv, indent=2, default=str), encoding="utf-8")
+
+    notes = [lv.get("fallback_note") for lv in levels if lv.get("fallback_note")]
+    error = None
+    if not winner.get("ok"):
+        error = winner.get("error") or "CalculiX did not produce a stress field"
+    elif n_levels > 1 and len(ok_levels) < 2:
+        error = (
+            "Asked for mesh convergence but only one level solved. "
+            "Reporting that mesh; not extrapolating."
+        )
+
+    payload = {
+        "ok": bool(winner.get("ok") and vm > 0),
         "kind": "fea",
         "solver": "calculix",
         "handoff": str(dest),
-        "inp": str(inp),
-        "nodes": len(nodes),
+        "inp": winner.get("inp"),
+        "nodes": winner.get("nodes"),
+        "element": winner.get("element"),
+        "order": winner.get("order"),
+        "char_m": winner.get("char_m"),
         "von_mises_max": vm,
         "von_mises_MPa": vm / 1e6,
-        "u_max_m": parsed.get("u_max"),
+        "u_max_m": winner.get("u_max_m"),
         "SF": sf,
         "allowable_Pa": allow,
         "iterate": iterate,
-        "stdout": (ccx_run.stdout or "")[-1500:],
+        "levels": [
+            {
+                "char_m": lv.get("char_m"),
+                "ok": lv.get("ok"),
+                "element": lv.get("element"),
+                "nodes": lv.get("nodes"),
+                "von_mises_max": lv.get("von_mises_max"),
+                "u_max_m": lv.get("u_max_m"),
+                "error": lv.get("error"),
+            }
+            for lv in levels
+        ],
+        "convergence": conv,
+        "notes": notes,
+        "stdout": winner.get("stdout"),
         "disclaimer": handoff["disclaimer"],
-        "error": None if ccx_run.returncode == 0 else (ccx_run.stderr or "ccx failed")[-2000:],
+        "error": error,
     }
+    if conv and conv["von_mises"].get("band"):
+        payload["convergence_band"] = conv["von_mises"]["band"]
+    (dest / "last.json").write_text(json.dumps(payload, indent=2, default=str)[:200000], encoding="utf-8")
+    return payload

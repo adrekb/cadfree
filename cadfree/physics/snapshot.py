@@ -22,7 +22,7 @@ from cadfree.manufacturing.mesh import load_mesh, metrics_from_mesh
 from cadfree.manufacturing.strength import parse_load_n
 from cadfree.manufacturing.types import MeshMetrics
 from cadfree.paths import project_dir
-from cadfree.physics.book import FLUIDS, FRICTION_PAIRS, G
+from cadfree.physics.book import FLUIDS, FRICTION_PAIRS, G, H_STILL_AIR
 from cadfree.store.db import db
 
 MM = 0.001
@@ -133,6 +133,9 @@ def _material_si(material_id: str | None, process_kind: str) -> dict[str, Any]:
         "nu": nu,
         "rho": rho,
         "allowable": allow,
+        "k": float(mat.get("k_w_mk") or 0.2),
+        "cp": float(mat.get("cp_j_kgk") or 1500.0),
+        "service_temp_c": mat.get("service_temp_c"),
         "tensile_xy_mpa": mat.get("tensile_xy_mpa"),
         "tensile_z_mpa": mat.get("tensile_z_mpa"),
         "process_kind": process_kind,
@@ -246,6 +249,37 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
         inputs["mu"] = float(mu)
     if "Cd" not in inputs and constraints.get("Cd") is not None:
         inputs["Cd"] = float(constraints["Cd"])
+    try:
+        k_th = float(material.get("k") or 0.2)
+        inputs["k"] = k_th
+    except (TypeError, ValueError):
+        pass
+    try:
+        inputs["cp"] = float(material.get("cp") or 1500.0)
+    except (TypeError, ValueError):
+        pass
+    inputs.setdefault("h", H_STILL_AIR)
+    from cadfree.physics.thermal import operating_temp_c
+
+    t_op, t_op_prov = operating_temp_c(constraints)
+    t_inf_raw = constraints.get("ambient_temp_c") or constraints.get("T_inf_c")
+    try:
+        t_inf_c = float(t_inf_raw) if t_inf_raw is not None else (t_op if t_op is not None else 25.0)
+    except (TypeError, ValueError):
+        t_inf_c = 25.0
+    inputs["T_inf"] = t_inf_c + 273.15
+    if t_op is not None:
+        inputs["T"] = t_op + 273.15
+    qdot = constraints.get("Qdot_W") or constraints.get("heat_w")
+    try:
+        if qdot is not None:
+            inputs["Qdot"] = float(qdot)
+    except (TypeError, ValueError):
+        pass
+    # Thermal conductivity lives on k_cond so a spring rate (k_n_per_mm → k)
+    # cannot silently overwrite it.
+    if "k" in inputs:
+        inputs.setdefault("k_cond", inputs["k"])
     k_mm = constraints.get("k_n_per_mm")
     try:
         if k_mm is not None:
@@ -356,6 +390,11 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
             "v_ms": v_ms,
             "n_rpm": n_rpm,
             "pair": pair,
+            "T_op_c": t_op,
+            "T_op_provenance": t_op_prov,
+            "T_inf_c": t_inf_c,
+            "Qdot_W": inputs.get("Qdot"),
+            "h": inputs.get("h"),
         },
         "inputs": inputs,
         "provenance": provenance,

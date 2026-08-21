@@ -33,3 +33,22 @@ def test_beam_script_contains_si_units():
     script = octave_beam_script(metrics, {"flex_modulus_gpa": 2.1, "tensile_xy_mpa": 40}, {"load_lbf": 50})
     assert "sigma =" in script
     assert probe()["first_order"]["available"] is True
+
+
+def test_simulate_fea_does_not_claim_unwired():
+    from cadfree.simulation.pipeline import simulate
+
+    metrics = MeshMetrics(
+        volume_mm3=8000,
+        surface_area_mm2=2000,
+        bbox_mm=(80, 40, 6),
+        watertight=True,
+        triangle_count=12,
+        solidity=1.0,
+    )
+    out = simulate(metrics, "petg", {"load_lbf": 1}, prefer="fea")
+    fea = next(r for r in out["rungs"] if r.get("rung") == "calculix" or r.get("kind") == "fea")
+    err = (fea.get("error") or "").lower()
+    assert "not wired" not in err
+    assert "inp writer is not wired" not in err
+

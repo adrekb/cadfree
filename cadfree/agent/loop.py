@@ -223,8 +223,9 @@ def _bind_tools(project_id: str) -> None:
             "Does this linkage actually move, and what does a pin see? Sweeps the driven joint "
             "(lock-up, convex-hull clash, Grashof, transmission, gears). If load_n / input_torque_nm "
             "or a spring joint is present, planar quasi-static pin forces and Wahl/solid-height "
-            "on coils. Verdict works|awkward|locks|collides|gears_wrong|overloaded. "
-            "Not Motion, not Adams, not mẍ of the whole assembly. Cite for_model.",
+            "on coils. Then 1-DOF RK4 if k/m exist, and Exudyn rigid DAE if installed. "
+            "Verdict works|awkward|locks|collides|gears_wrong|overloaded. "
+            "Not Motion, not Adams, not mẍ of the whole assembly unless Exudyn actually ran. Cite for_model.",
             {
                 "type": "object",
                 "properties": {
@@ -239,7 +240,7 @@ def _bind_tools(project_id: str) -> None:
             "lookup_formula",
             "Search the SI formula book (friction, PV, wear, pipe, aero drag, beams, "
             "coil springs / Wahl, pin shear, 1-DOF ωn, pin/hole clearance, stackup, "
-            "multirotor hover). "
+            "multirotor hover, conduction / Newton film / radiation / lumped Tss). "
             "Do not invent μ, C_d, k, ISO grades, or viscosity — use a book pair/fluid, "
             "the fits catalog, or ask_survey.",
             {
@@ -274,12 +275,11 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "run_solvers",
             "Snapshot the built part as SI (metres, N, Pa) and send a mesh copy to packaged "
-            "solvers: analytical formula book (always), planar pin/spring statics (mechanism), "
-            "Gmsh+CalculiX FEA if installed, fluids/aero handbook + CFD handoff if "
-            "OpenFOAM/Elmer/SU2 exist. pack=spring for coil/Wahl/1-DOF; pack=fit for "
-            "pin/hole clearance + stackup. "
-            "values.fea_bcs or set_load_path names fixtures (pick-id / holes / bbox fallback) "
-            "and load direction; default is bbox faces. "
+            "solvers: formula book (always), Gmsh+CalculiX C3D10 FEA if installed "
+            "(values.converge for mesh Richardson), thermal (lumped + optional ccx heat), "
+            "fluids handbook + OpenFOAM simpleFoam template (Cd only if forceCoeffs parses), "
+            "planar pin/spring statics, 1-DOF RK4 / Exudyn if installed. "
+            "pack=heat|spring|fit|aero. values.fea_bcs or set_load_path names fixtures. "
             "Then iterate PARAMS from results[].iterate. Never invent FEA/CFD numbers.",
             {
                 "type": "object",
@@ -288,13 +288,13 @@ def _bind_tools(project_id: str) -> None:
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["analytical", "fea", "fluids", "topology", "mechanism"],
+                            "enum": ["analytical", "fea", "fluids", "thermal", "dynamics", "topology", "mechanism"],
                         },
                     },
                     "values": {"type": "object"},
                     "pack": {
                         "type": "string",
-                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor", "spring", "mechanism", "fit"],
+                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor", "spring", "mechanism", "fit", "heat"],
                     },
                     "part_id": {"type": "string"},
                 },

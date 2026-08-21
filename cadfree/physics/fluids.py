@@ -83,33 +83,47 @@ def run_fluids(status: dict[str, Any], extra: dict[str, Any] | None = None) -> d
                 }
             )
 
+    from cadfree.physics.openfoam import probe_openfoam, run_openfoam
+
+    of = run_openfoam(status, extra, try_run=bool(extra.get("run_cfd", True)))
+    of_probe = probe_openfoam()
+    if of.get("Cd") is not None:
+        iterate.append(
+            {
+                "param": "width_mm",
+                "reason": f"OpenFOAM forceCoeffs Cd={of['Cd']:.3g} on the coarse mesh",
+                "note": "Not a y+ study. Compare to handbook drag_force before changing PARAMS.",
+            }
+        )
+
     cfd = {
-        "ok": False,
+        "ok": bool(any(w.get("ok") for w in worksheets) or of.get("ok")),
         "kind": "fluids",
-        "solver": "none",
-        "handoff": str(dest),
+        "solver": of.get("solver") if of.get("ran") else ("handbook+template"),
+        "handoff": of.get("handoff") or str(dest),
         "geometry": geom,
-        "probe": probe,
+        "probe": {**probe, "openfoam": of_probe},
         "worksheets": worksheets,
+        "openfoam": of,
         "iterate": iterate,
         "disclaimer": (
-            "Handbook aero/pipe from the SI snapshot. Not OpenFOAM, not a wind tunnel. "
-            "If a CFD engine is installed, the mesh copy is in sim/fluids/ — this build does not "
-            "run a RANS loop."
+            "Handbook aero/pipe from the SI snapshot plus an OpenFOAM simpleFoam template "
+            "in sim/fluids/openfoam/. Cd from RANS is reported only if forceCoeffs parsed. "
+            "Not a wind tunnel."
         ),
     }
-    if probe["available"]:
-        engine = next(iter(probe["engines"]))
-        cfd["solver"] = engine
-        cfd["error"] = (
-            f"{engine} is on PATH. Case card and SI STL are in {dest}. "
-            "Cadfree does not drive a full RANS/LES loop in this build — use the engine on that copy, "
-            "or iterate from the handbook worksheets."
-        )
+    if of.get("Cd") is not None:
+        cfd["Cd_cfd"] = of["Cd"]
+        cfd["ok"] = True
+        cfd["error"] = None
+    elif of_probe["available"] and of.get("error"):
+        cfd["error"] = of["error"]
+        cfd["ok"] = any(w.get("ok") for w in worksheets)
+    elif not geom:
+        cfd["error"] = "No SI STL yet (build_model). Handbook numbers still used the bbox/PARAMS snapshot."
+        cfd["ok"] = any(w.get("ok") for w in worksheets)
     else:
         cfd["ok"] = any(w.get("ok") for w in worksheets)
-        if not geom:
-            cfd["error"] = "No SI STL yet (build_model). Handbook numbers still used the bbox/PARAMS snapshot."
-        elif not any(w.get("ok") for w in worksheets):
+        if not cfd["ok"]:
             cfd["error"] = probe["install_hint"]
     return cfd

@@ -99,3 +99,10 @@ def test_search_standards_no_live_web(monkeypatch):
     assert any("ISO" in (c.get("title") + str(c.get("standard_ids"))) for c in out["citations"])
     assert len(calls) >= 2  # first pass + site-boost retry when no body hits
     assert "site:iso.org" in calls[1]
+
+
+def test_search_web_can_see_get_setting():
+    import cadfree.search.standards as std
+
+    assert callable(getattr(std, "get_setting", None))
+

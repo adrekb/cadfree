@@ -778,6 +778,9 @@ def check_mechanism(
         for_model = (
             f"Verdict: {verdict}. " + " ".join(bits) + " " + (loads.get("disclaimer") or "")
         )
+    from cadfree.kinematics.dynamics import analyze_mechanism_dynamics
+
+    dynamics = analyze_mechanism_dynamics(project_id)
     return {
         **sweep,
         "ok": verdict in {"works", "awkward"},
@@ -786,6 +789,7 @@ def check_mechanism(
         "awkward": verdict == "awkward",
         "overloaded": verdict == "overloaded",
         "loads": loads if not loads.get("skipped") else None,
+        "dynamics": dynamics,
         "for_model": for_model,
         "comfort": {
             "kind": sweep.get("kind"),

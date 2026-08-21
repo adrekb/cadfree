@@ -25,6 +25,8 @@ FLUIDS: dict[str, dict[str, float]] = {
 }
 
 G = 9.80665
+SIGMA_SB = 5.670374419e-8
+H_STILL_AIR = 10.0  # W/(m²·K), named still-air film; not a CFD h.
 
 
 def _f(
@@ -584,6 +586,80 @@ FORMULAS: list[dict[str, Any]] = [
         disclaimer="Plane wall, steady. Not a 3D thermal FEA.",
         tags=("heat",),
     ),
+    _f(
+        id="newton_cooling",
+        domain="heat",
+        title="Newton film convection",
+        latex=r"\dot{Q} = h A (T - T_{\infty})",
+        expr="h * A * (T - T_inf)",
+        output="Qdot",
+        unit="W",
+        variables={
+            "h": _var(r"h", "W/(m^2·K)", "film coefficient", default=H_STILL_AIR),
+            "A": _var(r"A", "m^2", "surface area"),
+            "T": _var(r"T", "K", "surface temperature"),
+            "T_inf": _var(r"T_{\infty}", "K", "sink temperature"),
+        },
+        disclaimer="Newton's law of cooling. h defaults to 10 W/(m²·K) still air. Not a CFD film, not boiling.",
+        tags=("heat", "convection"),
+        source="Incropera, first-order",
+    ),
+    _f(
+        id="radiation_net",
+        domain="heat",
+        title="Net gray-body radiation to a large enclosure",
+        latex=r"\dot{Q} = \varepsilon \sigma A (T^4 - T_{\infty}^4)",
+        expr="epsilon * sigma * A * (T**4 - T_inf**4)",
+        output="Qdot",
+        unit="W",
+        variables={
+            "epsilon": _var(r"\varepsilon", "1", "emissivity", default=0.9),
+            "sigma": _var(r"\sigma", "W/(m^2·K^4)", "Stefan–Boltzmann", default=SIGMA_SB),
+            "A": _var(r"A", "m^2", "surface area"),
+            "T": _var(r"T", "K", "surface temperature"),
+            "T_inf": _var(r"T_{\infty}", "K", "surroundings temperature"),
+        },
+        disclaimer="Gray body to a large enclosure. Not view factors, not a cavity, not solar load.",
+        tags=("heat", "radiation"),
+        source="Incropera, first-order",
+    ),
+    _f(
+        id="lumped_tau",
+        domain="heat",
+        title="Lumped thermal time constant",
+        latex=r"\tau = \rho V c_p / (h A)",
+        expr="rho_solid * V * cp / (h * A)",
+        output="tau",
+        unit="s",
+        variables={
+            "rho_solid": _var(r"\rho", "kg/m^3", "solid density"),
+            "V": _var(r"V", "m^3", "volume"),
+            "cp": _var(r"c_p", "J/(kg·K)", "specific heat"),
+            "h": _var(r"h", "W/(m^2·K)", "film coefficient", default=H_STILL_AIR),
+            "A": _var(r"A", "m^2", "surface area"),
+        },
+        disclaimer="Valid when Bi = hL/k ≪ 1. Not a 3-D transient FEA.",
+        tags=("heat", "transient"),
+        source="Incropera lumped capacitance",
+    ),
+    _f(
+        id="lumped_Tss",
+        domain="heat",
+        title="Lumped steady temperature under a heat load",
+        latex=r"T_{\mathrm{ss}} = T_{\infty} + \dot{Q}/(h A)",
+        expr="T_inf + Qdot / (h * A)",
+        output="T_ss",
+        unit="K",
+        variables={
+            "T_inf": _var(r"T_{\infty}", "K", "sink temperature"),
+            "Qdot": _var(r"\dot{Q}", "W", "heat into the part"),
+            "h": _var(r"h", "W/(m^2·K)", "film coefficient", default=H_STILL_AIR),
+            "A": _var(r"A", "m^2", "surface area"),
+        },
+        disclaimer="Energy balance on a lumped body. Not spatial hot spots, not CalculiX NT.",
+        tags=("heat",),
+        source="Incropera lumped capacitance",
+    ),
 ]
 
 BY_ID = {f["id"]: f for f in FORMULAS}
@@ -636,6 +712,12 @@ PACKS: dict[str, dict[str, Any]] = {
         "title": "Pin/hole clearance after shrink + stackup",
         "formulas": ["fit_clearance", "stackup_wc", "stackup_rss"],
         "solvers": ["analytical"],
+    },
+    "heat": {
+        "id": "heat",
+        "title": "Steady conduction / film / radiation + lumped Tss (not thermal FEA)",
+        "formulas": ["conduction", "newton_cooling", "radiation_net", "lumped_tau", "lumped_Tss"],
+        "solvers": ["analytical", "thermal"],
     },
 }
 

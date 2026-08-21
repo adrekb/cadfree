@@ -310,6 +310,60 @@ MATERIALS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Handbook isotropic k and cp. Not orthotropic printed coupons. Used by the
+# thermal rung; missing keys stay on the polymer default.
+K_W_MK: dict[str, float] = {
+    "pla": 0.13,
+    "petg": 0.19,
+    "abs": 0.17,
+    "asa": 0.17,
+    "nylon": 0.25,
+    "pc": 0.20,
+    "tpu": 0.19,
+    "petg_cf": 0.40,
+    "pa_cf": 0.50,
+    "sla_standard": 0.20,
+    "sla_tough": 0.20,
+    "316l": 15.0,
+    "alsi10mg": 140.0,
+    "ti64": 6.7,
+    "al6061": 167.0,
+    "steel1018": 51.9,
+    "delrin": 0.31,
+    "oak": 0.17,
+    "plywood": 0.13,
+    "acrylic": 0.19,
+    "pp_im": 0.22,
+    "abs_im": 0.17,
+}
+CP_J_KGK: dict[str, float] = {
+    "pla": 1800.0,
+    "petg": 1800.0,
+    "abs": 1400.0,
+    "asa": 1400.0,
+    "nylon": 1700.0,
+    "pc": 1200.0,
+    "tpu": 1800.0,
+    "petg_cf": 1400.0,
+    "pa_cf": 1400.0,
+    "sla_standard": 1400.0,
+    "sla_tough": 1400.0,
+    "316l": 500.0,
+    "alsi10mg": 900.0,
+    "ti64": 560.0,
+    "al6061": 900.0,
+    "steel1018": 490.0,
+    "delrin": 1500.0,
+    "oak": 2000.0,
+    "plywood": 1500.0,
+    "acrylic": 1470.0,
+    "pp_im": 1900.0,
+    "abs_im": 1400.0,
+}
+for _mid, _mat in MATERIALS.items():
+    _mat.setdefault("k_w_mk", K_W_MK.get(_mid, 0.2))
+    _mat.setdefault("cp_j_kgk", CP_J_KGK.get(_mid, 1500.0))
+
 PROCESS_KINDS: dict[str, dict[str, Any]] = {
     "fdm": {
         "id": "fdm",

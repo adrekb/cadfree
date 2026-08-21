@@ -93,7 +93,8 @@ def test_si_snapshot_and_solvers_iterate(tmp_path, monkeypatch):
     fea = next(r for r in body["results"] if r["kind"] == "fea")
     assert fea["ok"] is False
     assert "von_mises_max" not in fea or not fea.get("ok")
-    assert "gmsh" in (fea.get("error") or "").lower() or "Install" in (fea.get("error") or "")
+    err = (fea.get("error") or "").lower()
+    assert "gmsh" in err or "install" in err or "ccx" in err or "calculix" in err or "stl" in err
     analytical = next(r for r in body["results"] if r["kind"] == "analytical")
     assert any(w.get("ok") for w in analytical["worksheets"])
     stress = next(w for w in analytical["worksheets"] if w["formula_id"] == "cantilever_stress")
@@ -130,3 +131,43 @@ def test_run_solvers_without_mesh_still_uses_params(tmp_path, monkeypatch):
     status = client.get(f"/api/projects/{pid}/si-status").json()
     assert status["cadquery"]["params_mm"]["thickness_mm"] == 6.0
     assert abs(status["inputs"]["width"] - 0.04) < 1e-9
+
+
+def test_quadratic_geo_and_probe_label(tmp_path):
+    from cadfree.physics.fea import _write_geo, probe_fea
+
+    stl = tmp_path / "part.stl"
+    stl.write_text("solid x\nendsolid x\n", encoding="utf-8")
+    geo = tmp_path / "part.geo"
+    _write_geo(stl, geo, 0.004, order=2)
+    text = geo.read_text(encoding="utf-8")
+    assert "ElementOrder = 2" in text
+    probe = probe_fea()
+    assert "C3D10" in probe["label"] or "C3D10" in (probe.get("elements") or "")
+
+
+def test_thermal_solver_pack(tmp_path, monkeypatch):
+    monkeypatch.setenv("CADFREE_HOME", str(tmp_path))
+    import json
+
+    import trimesh
+    from fastapi.testclient import TestClient
+
+    from cadfree.cad.assembly import get_part, part_dir
+    from cadfree.main import create_app
+    from cadfree.store.db import db
+
+    client = TestClient(create_app())
+    pid = client.post("/api/projects", json={"name": "hot", "spec_text": "bracket"}).json()["id"]
+    with db() as conn:
+        conn.execute(
+            "UPDATE projects SET constraints = ? WHERE id = ?",
+            (json.dumps({"load_n": 10, "material_id": "petg", "Qdot_W": 3, "operating_temp_c": 40}), pid),
+        )
+    part = get_part(pid, None)
+    trimesh.creation.box(extents=[80, 40, 6]).export(part_dir(pid, part["id"]) / "model.stl")
+    body = client.post(f"/api/projects/{pid}/solvers", json={"pack": "heat"}).json()
+    kinds = {r["kind"] for r in body["results"]}
+    assert "thermal" in kinds
+    assert "analytical" in kinds
+

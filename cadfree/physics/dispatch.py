@@ -17,7 +17,9 @@ from cadfree.physics.engine import solve_formula, sympy_status
 from cadfree.physics.fea import probe_fea, run_fea
 from cadfree.physics.fluids import probe_fluids, run_fluids
 from cadfree.physics.snapshot import bind_formula, sim_dir, write_si_status
+from cadfree.physics.thermal import probe_thermal, run_thermal
 from cadfree.physics.topology import probe_generate, run_generate
+from cadfree.kinematics.dynamics import probe_exudyn
 
 
 def probe_solvers() -> dict[str, Any]:
@@ -31,16 +33,23 @@ def probe_solvers() -> dict[str, Any]:
         "sympy": sympy_status(),
         "fea": fea,
         "fluids": fluids,
+        "thermal": probe_thermal(),
         "matlab": find_engine(),
         "kinematics": {
             "available": True,
             "label": "Planar four-bar / slider-crank / spring force elements / pin statics + convex-hull SAT",
         },
+        "dynamics": {
+            "rk4_1dof": True,
+            "exudyn": probe_exudyn(),
+            "label": "1-DOF RK4 always; Exudyn rigid DAE if installed",
+        },
         "first_order": {"available": True, "label": "Closed-form cantilever (always on)"},
         "topology": probe_generate(),
         "contract": (
             "CadQuery → SI status.json + part_si.stl copies → solvers → iterate PARAMS. "
-            "Never invent a mesh or CFD result. Topology is packaged SIMP, not Fusion GD."
+            "Never invent a mesh or CFD result. Topology is packaged SIMP, not Fusion GD. "
+            "FEA default is C3D10; mesh-convergence is opt-in. Thermal is lumped + optional ccx heat."
         ),
     }
 
@@ -57,6 +66,8 @@ def _analytical_ids(status: dict[str, Any], pack: str | None) -> list[str]:
         ids.extend(["coulomb_friction", "friction_power", "pv_bushing"])
     if inputs.get("Q") or inputs.get("hole_d"):
         ids.append("reynolds")
+    if inputs.get("Qdot") or env.get("T_op_c") or inputs.get("T"):
+        ids.extend(["newton_cooling", "lumped_tau", "conduction"])
     # unique, stable order
     seen: list[str] = []
     for i in ids:
@@ -123,16 +134,36 @@ def run_solvers(
     part_id: str | None = None,
 ) -> dict[str, Any]:
     status = write_si_status(project_id, part_id)
-    want = solvers or ["analytical", "fea", "fluids"]
-    want = [s.lower().strip() for s in want]
+    if solvers:
+        want = [s.lower().strip() for s in solvers]
+    elif pack == "heat":
+        want = ["analytical", "thermal"]
+    else:
+        want = ["analytical", "fea", "fluids"]
     extra = dict(values or {})
     results: list[dict[str, Any]] = []
     if "analytical" in want:
         results.append(run_analytical(status, extra, pack=pack))
     if "fea" in want or "calculix" in want or "fem" in want:
         results.append(run_fea(status, values=extra))
+    if "thermal" in want or "heat" in want:
+        results.append(run_thermal(status, extra))
     if "fluids" in want or "cfd" in want or "aero" in want:
         results.append(run_fluids(status, extra))
+    if "dynamics" in want or "exudyn" in want:
+        from cadfree.kinematics.dynamics import analyze_mechanism_dynamics
+
+        dyn = analyze_mechanism_dynamics(project_id)
+        results.append(
+            {
+                "ok": bool(dyn.get("ok")),
+                "kind": "dynamics",
+                "solver": "exudyn" if (dyn.get("exudyn") or {}).get("ok") else "rk4_1dof",
+                "report": dyn,
+                "iterate": [],
+                "disclaimer": dyn.get("disclaimer"),
+            }
+        )
     if "mechanism" in want or pack in {"spring", "mechanism"}:
         from cadfree.kinematics.loads import analyze_mechanism_loads
 

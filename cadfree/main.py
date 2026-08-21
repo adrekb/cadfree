@@ -135,7 +135,7 @@ class FormulaSolveIn(BaseModel):
 
 
 class SolversIn(BaseModel):
-    solvers: list[str] = Field(default_factory=lambda: ["analytical", "fea", "fluids"])
+    solvers: list[str] | None = None
     values: dict[str, Any] = Field(default_factory=dict)
     pack: str | None = None
     part_id: str | None = None

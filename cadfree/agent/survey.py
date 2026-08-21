@@ -186,6 +186,10 @@ CONSTRAINT_KEYS = {
     "fit",
     "stackup_limit_mm",
     "shrink_mm",
+    "operating_temp_c",
+    "ambient_temp_c",
+    "Qdot_W",
+    "heat_w",
 }
 
 FLOAT_KEYS = {
@@ -215,6 +219,10 @@ FLOAT_KEYS = {
     "hole_d_mm",
     "stackup_limit_mm",
     "shrink_mm",
+    "operating_temp_c",
+    "ambient_temp_c",
+    "Qdot_W",
+    "heat_w",
 }
 
 BOOL_KEYS = {"printed_frame", "cots_electronics", "confirm_kit"}
@@ -247,6 +255,14 @@ SURVEY_TEMPLATES: dict[str, dict[str, Any]] = {
                 "prompt": "Where does it live?",
                 "type": "choice",
                 "options": ["indoor dry", "outdoor", "hot / near motors", "unknown"],
+            },
+            {
+                "id": "operating_temp_c",
+                "prompt": "Continuous operating temperature?",
+                "type": "number",
+                "unit": "°C",
+                "required": False,
+                "help": "Skip if indoor room temp. Required if it sits near a motor, ESC, or hot bed.",
             },
             {
                 "id": "max_mass_g",
