@@ -337,6 +337,16 @@ h1, h2, h3, h4,
 }
 .solver-card .chip.ok { color: var(--green); }
 .solver-card .chip.no { color: var(--yellow); }
+.gen-volfrac {
+  font-size: 12px;
+  max-width: 110px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+.gen-card { margin-top: 8px; }
 #chat-input:disabled, #chat-send:disabled { opacity: 0.55; cursor: not-allowed; }
 .think-label {
   display: flex; align-items: center; gap: 6px;

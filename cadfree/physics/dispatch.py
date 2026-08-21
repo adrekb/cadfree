@@ -17,6 +17,7 @@ from cadfree.physics.engine import solve_formula, sympy_status
 from cadfree.physics.fea import probe_fea, run_fea
 from cadfree.physics.fluids import probe_fluids, run_fluids
 from cadfree.physics.snapshot import bind_formula, sim_dir, write_si_status
+from cadfree.physics.topology import probe_generate, run_generate
 
 
 def probe_solvers() -> dict[str, Any]:
@@ -36,9 +37,10 @@ def probe_solvers() -> dict[str, Any]:
             "label": "Planar four-bar / open chain / gear pitch + AABB clash",
         },
         "first_order": {"available": True, "label": "Closed-form cantilever (always on)"},
+        "topology": probe_generate(),
         "contract": (
             "CadQuery → SI status.json + part_si.stl copies → solvers → iterate PARAMS. "
-            "Never invent a mesh or CFD result."
+            "Never invent a mesh or CFD result. Topology is packaged SIMP, not Fusion GD."
         ),
     }
 
@@ -131,6 +133,21 @@ def run_solvers(
         results.append(run_fea(status))
     if "fluids" in want or "cfd" in want or "aero" in want:
         results.append(run_fluids(status, extra))
+    if "topology" in want or "generate" in want or "simp" in want:
+        vf = extra.get("volfrac") or extra.get("target_mass_fraction")
+        try:
+            vf = float(vf) if vf is not None else None
+        except (TypeError, ValueError):
+            vf = None
+        results.append(
+            run_generate(
+                project_id,
+                part_id=part_id,
+                volfrac=vf,
+                design_space=str(extra.get("design_space") or "part"),
+                assumed_load=bool(extra.get("assumed_load", True)),
+            )
+        )
 
     iterate: list[dict[str, Any]] = []
     for r in results:

@@ -36,6 +36,7 @@ from cadfree.paths import project_dir
 from cadfree.physics.book import list_book, lookup_formula
 from cadfree.physics.dispatch import probe_solvers, run_solvers, solve_on_part
 from cadfree.physics.snapshot import write_si_status
+from cadfree.physics.topology import run_generate
 from cadfree.simulation.pipeline import probe as sim_probe
 from cadfree.kinematics.mechanism import list_joints, remove_joint, sweep_mechanism, upsert_joint
 from cadfree.store.db import all_settings, db, init_db, set_setting
@@ -137,6 +138,16 @@ class SolversIn(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
     pack: str | None = None
     part_id: str | None = None
+
+
+class GenerateIn(BaseModel):
+    part_id: str | None = None
+    volfrac: float | None = None
+    target_mass_fraction: float | None = None
+    design_space: str = "part"
+    mill_25d: bool | None = None
+    additive: bool | None = None
+    assumed_load: bool = True
 
 
 def create_app() -> FastAPI:
@@ -575,6 +586,23 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "project not found")
         return run_solvers(
             project_id, solvers=body.solvers, values=body.values, pack=body.pack, part_id=body.part_id
+        )
+
+    @app.post("/api/projects/{project_id}/generate")
+    def post_generate(project_id: str, body: GenerateIn) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        vf = body.volfrac if body.volfrac is not None else body.target_mass_fraction
+        return run_generate(
+            project_id,
+            part_id=body.part_id,
+            volfrac=vf,
+            design_space=body.design_space,
+            mill_25d=body.mill_25d,
+            additive=body.additive,
+            assumed_load=body.assumed_load,
         )
 
     @app.post("/api/projects/{project_id}/formula")

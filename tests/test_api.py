@@ -129,4 +129,4 @@ def test_agent_tools_include_survey_and_search(tmp_path, monkeypatch):
     plug._PLUGINS.clear()
     _bind_tools("p-missing")
     names = set(all_tools())
-    assert {"ask_survey", "search_standards", "read_url", "list_assembly", "place_instance", "sweep_mechanism", "define_joint", "check_mesh", "lookup_formula", "solve_formula", "run_solvers", "list_features", "patch_feature"} <= names
+    assert {"ask_survey", "search_standards", "read_url", "list_assembly", "place_instance", "sweep_mechanism", "define_joint", "check_mesh", "lookup_formula", "solve_formula", "run_solvers", "list_features", "patch_feature", "generate_designs"} <= names

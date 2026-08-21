@@ -37,6 +37,7 @@ from cadfree.kinematics.mechanism import (
 )
 from cadfree.physics.book import lookup_formula
 from cadfree.physics.dispatch import run_solvers, solve_on_part
+from cadfree.physics.topology import run_generate
 from cadfree.physics.engine import solve_formula
 from cadfree.store.db import db
 
@@ -380,6 +381,24 @@ def make_handlers(project_id: str) -> dict[str, Any]:
     ) -> dict[str, Any]:
         return run_solvers(project_id, solvers=solvers, values=values, pack=pack, part_id=part_id)
 
+    def generate_designs(
+        part_id: str | None = None,
+        volfrac: float | None = None,
+        design_space: str = "part",
+        mill_25d: bool | None = None,
+        additive: bool | None = None,
+        assumed_load: bool = True,
+    ) -> dict[str, Any]:
+        return run_generate(
+            project_id,
+            part_id=part_id,
+            volfrac=volfrac,
+            design_space=design_space or "part",
+            mill_25d=mill_25d,
+            additive=additive,
+            assumed_load=assumed_load,
+        )
+
     def upsert(name: str, source: str = "", part_id: str | None = None, kind: str = "part", material_id: str | None = None) -> dict[str, Any]:
         try:
             part = upsert_part(
@@ -440,4 +459,5 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "lookup_formula": lookup_f,
         "solve_formula": solve_f,
         "run_solvers": solvers,
+        "generate_designs": generate_designs,
     }

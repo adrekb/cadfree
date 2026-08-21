@@ -66,6 +66,21 @@ CadQuery will not run friction, FEA, or CFD. After `build_model`:
      probed, never faked as a RANS field.
 4. `iterate` hints go back to PARAMS (`thickness_mm`, …). Rebuild, run again.
 
+## Generative design (SIMP, not Fusion)
+
+Autodesk Generative Design is a cloud product. Cadfree’s analogue is the
+research method that look comes from:
+
+- Sigmund 2001, 99-line MATLAB SIMP
+- Liu & Tovar 2014, 3-D SIMP
+- mill 2.5-D extrusion filter; crude AM overhang squeeze
+
+`generate_designs` (studio **Generate**) voxelizes the SI mesh copy, runs a
+short optimality-criteria loop, and registers organic STL candidates as
+`kind=imported` parts. CadQuery is not rewritten. Scipy is required
+(`pip install 'cadfree[physics]'`). Compliance is the voxel FEM model, not
+CalculiX. Missing scipy is named in one sentence — we never invent it.
+
 ## Formula book
 
 Friction, maintenance (PV, Archard, L10), fluids, aero, beams. All SI. The

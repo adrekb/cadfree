@@ -114,6 +114,13 @@
         </label>
         <span class="spacer"></span>
         <button class="btn btn-ghost" onclick="rebuildNow()">Rebuild</button>
+        <button class="btn btn-ghost" onclick="runGenerate()" title="SIMP topology on the SI mesh copy — not Fusion Generative Design">Generate</button>
+        <select id="gen-volfrac" class="gen-volfrac" title="Target solid fraction">
+          <option value="">auto 30/40%</option>
+          <option value="0.3">30%</option>
+          <option value="0.4">40%</option>
+          <option value="0.5">50%</option>
+        </select>
         <label class="btn btn-ghost" style="cursor:pointer">
           <input id="import-cad" type="file" accept=".step,.stp,.iges,.igs,.brep,.brp,.stl,.obj,.3mf,.ply,.gltf,.glb,.zip" multiple hidden onchange="importCadFiles(event)">
           Import CAD
@@ -289,6 +296,8 @@
       <p>Fusion, SolidWorks, FreeCAD, Onshape, Inventor, Blender: use <b>Import CAD</b> (or drop the file in chat). <b>STEP</b> is the right assembly export — Cadfree splits solids and keeps world coordinates in each mesh. STL / 3MF / OBJ / PLY are single bodies (or a zip of them). Native <code>.sldprt</code> / <code>.f3d</code> / <code>.ipt</code> are not readable; export STEP or STL from that program. STEP needs CadQuery (<code>pip install cadquery</code>). Imported parts have no PARAMS — edit them there, re-import here.</p>
       <h3>Linkages — does it move?</h3>
       <p>CadQuery (OCCT) builds solids. It will not tell you if a four-bar locks or if two gears mesh. Cadfree adds joints on instances: revolute, prismatic, gear. A ground–crank–coupler–rocker loop is solved as a planar four-bar (Grashof + circle intersection). <code>sweep_mechanism</code> drives the input and reports lock-up plus bounding-box clashes of the posed meshes. Gear check is pitch diameters (module × teeth), not a tooth-profile contact sim. Not SolidWorks Motion.</p>
+      <h3>Generative design — packaged SIMP, not Fusion</h3>
+      <p>Autodesk Generative Design is a cloud product (level-set / lattice / T-splines). Cadfree’s analogue is the open research method behind that look: <b>SIMP</b> (Sigmund’s 99-line MATLAB code, Liu &amp; Tovar 3-D). After Rebuild, <b>Generate</b> voxelizes the SI mesh copy, runs a short optimality-criteria loop, and drops 1–3 organic STL candidates as <code>imported</code> parts next to the source. Mill shops get a 2.5-D extrusion filter; FDM/SLA get a crude overhang squeeze. Scipy is required (<code>pip install 'cadfree[physics]'</code>). Compliance is the voxel FEM model, not CalculiX. CadQuery is not rewritten — you still edit the parametric solid yourself.</p>
       <h3>Physics — CadQuery writes the solid, solvers get a copy</h3>
       <p>CadQuery will not run friction, FEA, or CFD. After a rebuild, Cadfree snapshots the part in <b>SI</b> (metres, newtons, pascals) and copies the mesh into <code>sim/</code>. <code>run_solvers</code> sends that copy to whatever is packaged: the formula book (always — LaTeX in chat), Gmsh+CalculiX if installed, handbook aero/pipe plus a CFD handoff folder if OpenFOAM/Elmer/SU2 exist. Results come back with <code>iterate</code> hints so the agent can change PARAMS, rebuild, and run again. Missing tools are named in one sentence. Not Ansys, not a wind tunnel, not a PE stamp.</p>
     </div>

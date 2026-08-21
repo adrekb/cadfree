@@ -25,6 +25,7 @@ PLAN_BLOCKED = {
     "remove_instance",
     "define_joint",
     "remove_joint",
+    "generate_designs",
 }
 
 
@@ -250,7 +251,7 @@ def _bind_tools(project_id: str) -> None:
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["analytical", "fea", "fluids"],
+                            "enum": ["analytical", "fea", "fluids", "topology"],
                         },
                     },
                     "values": {"type": "object"},
@@ -262,6 +263,38 @@ def _bind_tools(project_id: str) -> None:
                 },
             },
             handlers["run_solvers"],
+        ),
+        Tool(
+            "generate_designs",
+            "Fusion-style generative design analogue: Sigmund/Liu–Tovar SIMP on a voxel "
+            "copy of the built SI mesh. Returns 1–3 organic STL candidates as imported "
+            "parts (does not rewrite CadQuery). Not Autodesk Generative Design. "
+            "Requires scipy. Call build_model first. Never invent compliance.",
+            {
+                "type": "object",
+                "properties": {
+                    "part_id": {"type": "string"},
+                    "volfrac": {
+                        "type": "number",
+                        "description": "Target solid fraction 0.08–0.9. Omit for 30% and 40% outcomes.",
+                    },
+                    "design_space": {"type": "string", "enum": ["part", "bbox"]},
+                    "mill_25d": {
+                        "type": "boolean",
+                        "description": "Force 2.5D mill extrusion filter. Default from workshop machines.",
+                    },
+                    "additive": {
+                        "type": "boolean",
+                        "description": "Force AM overhang filter. Default from FDM/SLA/metal AM in workshop.",
+                    },
+                    "assumed_load": {
+                        "type": "boolean",
+                        "description": "If no F_N, use a unit load and say so. Default true.",
+                    },
+                },
+            },
+            handlers["generate_designs"],
+            mutating=True,
         ),
         Tool(
             "search_standards",

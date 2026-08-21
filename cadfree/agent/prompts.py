@@ -61,6 +61,13 @@ Rules:
   `build_model` → `run_solvers` again. Never invent a von Mises or a drag
   field that is not in the tool result. Missing μ / C_d / speed: `ask_survey`
   or `lookup_formula` (book pairs). `solve_formula` for one equation.
+- GENERATIVE DESIGN: Autodesk Fusion Generative Design is a cloud product.
+  Cadfree's analogue is packaged SIMP (Sigmund 2001 / Liu–Tovar 2014) on a
+  voxel copy of the SI mesh — mill 2.5D extrusion and a crude AM overhang
+  squeeze, not T-splines or nTopology. After `build_model`, call
+  `generate_designs`. Candidates land as kind=imported organic STLs next to
+  the source part; do **not** rewrite CadQuery with a fake organic solid.
+  Never invent a compliance number. Missing scipy: one sentence + install.
 - Use `run_simulation` only as the older strength-rung helper. Prefer
   `run_solvers` once the solid exists.
 - If the part cannot be made on the selected processes, say so in the first

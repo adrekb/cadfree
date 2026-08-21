@@ -245,7 +245,7 @@ function renderParts(assembly) {
         return;
     }
     const chips = parts.map(p =>
-        `<button class="part-chip ${p.id === active ? 'on' : ''}" onclick="selectPart('${p.id}')" title="${escHtml(p.kind || 'part')}">${escHtml(p.name)}${p.kind === 'imported' ? ' · import' : ''}</button>`
+        `<button class="part-chip ${p.id === active ? 'on' : ''}" onclick="selectPart('${p.id}')" title="${escHtml(p.kind || 'part')}">${escHtml(p.name)}${p.kind === 'imported' ? (String(p.name || '').startsWith('gen') ? ' · gen' : ' · import') : ''}</button>`
     ).join('');
     const bomTxt = n > 1
         ? `<span class="muted small">${n} instances · ${assembly.unique_parts || parts.length} unique · ${bom.map(b => b.qty + '× ' + b.name).join(', ')}</span>`
@@ -552,6 +552,50 @@ async function rebuildNow() {
     await refreshFeatureTree();
     document.getElementById('stl-download').href = '/api/projects/' + currentProjectId + '/stl';
     refreshViewer(currentProjectId);
+}
+
+async function runGenerate() {
+    if (!currentProjectId) return;
+    const sel = document.getElementById('gen-volfrac');
+    const raw = sel ? sel.value : '';
+    const body = { assumed_load: true, design_space: 'part' };
+    if (raw) body.volfrac = Number(raw);
+    appendMsg('tool', 'generate_designs', 'tool');
+    try {
+        const result = await api('/api/projects/' + currentProjectId + '/generate', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+        renderGenerate(result);
+        const p = await api('/api/projects/' + currentProjectId);
+        renderParts(p.assembly || {});
+        refreshViewer(currentProjectId);
+    } catch (e) {
+        appendMsg('error', e.message || String(e));
+    }
+}
+
+function renderGenerate(result) {
+    const log = document.getElementById('chat-log');
+    const div = document.createElement('div');
+    div.className = 'msg physics';
+    const cands = result.candidates || [];
+    const cards = cands.map(c => {
+        const ok = c.ok ? 'ok' : 'no';
+        const hist = (c.history || []).map(n => Number(n).toFixed(1)).join(' → ');
+        return `<div class="solver-card gen-card"><span class="chip ${ok}">${escHtml(c.name || 'SIMP')}</span>` +
+            (c.compliance != null ? `<span class="muted small">c = ${escHtml(String(c.compliance))}</span>` : '') +
+            (c.volfrac_actual != null ? `<span class="muted small"> vol ${escHtml(String(Number(c.volfrac_actual).toFixed(3)))}</span>` : '') +
+            (hist ? `<div class="prov">compliance ${escHtml(hist)}</div>` : '') +
+            (c.reason ? `<p class="disclaimer">${escHtml(c.reason)}</p>` : '') +
+            `</div>`;
+    }).join('');
+    const miss = result.ok ? '' : `<p class="disclaimer">${escHtml(result.reason || result.error || 'Generate failed.')}</p>`;
+    div.innerHTML = '<div class="who">generate · SIMP</div>' + (cards || miss) +
+        (result.disclaimer ? `<p class="disclaimer">${escHtml(result.disclaimer)}</p>` : '') +
+        (result.assumed_unit_load ? '<p class="disclaimer">Unit load assumed — not a Fusion-grade load case.</p>' : '');
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
 }
 
 function renderFeasibility(report) {
@@ -971,6 +1015,13 @@ async function sendChatText(text) {
                     else if (ev.result && ev.result.gears) appendMsg('mesh', JSON.stringify(ev.result.gears), 'tool');
                 } else if (ev.type === 'tool_result' && (ev.name === 'solve_formula' || ev.name === 'lookup_formula' || ev.name === 'run_solvers')) {
                     renderPhysics(ev.name, ev.result || {});
+                    if (ev.name === 'run_solvers' && ev.result && (ev.result.results || []).some(r => r.kind === 'topology' || r.engine === 'simp')) {
+                        refreshViewer(currentProjectId);
+                    }
+                } else if (ev.type === 'tool_result' && ev.name === 'generate_designs') {
+                    renderGenerate(ev.result || {});
+                    refreshViewer(currentProjectId);
+                    api('/api/projects/' + currentProjectId).then(p => renderParts(p.assembly || {})).catch(() => {});
                 } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
                     renderFeasibility(ev.result || {});
                 } else if (ev.type === 'error') {
