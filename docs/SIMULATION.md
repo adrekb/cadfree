@@ -17,6 +17,9 @@ injection-molded datasheet. Mass is volume × density × (shells + infill).
 
 This is the same back-of-the-envelope an ME does before opening Ansys. It is
 **not FEA**. It exists to refuse impossible specs and to rank materials.
+`optimize_params` runs that same check on a PARAMS-scaled copy of the current
+mesh (~40 evals) so the agent does not rewrite CadQuery ten times. FEA is
+for verifying the winner.
 
 ## Rung 1 — MATLAB / Octave (Agent mode)
 
@@ -46,8 +49,11 @@ The open stack that actually belongs behind CadQuery:
 
 Wiring the INP writer is in `cadfree/physics/fea.py`: the SI mesh copy
 always lands in `sim/fea/`. If `gmsh` and `ccx` are on PATH, Cadfree tet-meshes
-and runs a linear static with bbox-face BCs. If they are missing, the copy is
-still there and Agent mode will not invent von Mises.
+and runs a linear static. Fixtures and loads come from `set_load_path`
+(pick-ids on the millimetre STL, PARAMS holes, or a named bbox-face fallback).
+FDM gets a tensile_z/tensile_xy knockdown on isotropic E — not mapped
+orthotropic. If gmsh/ccx are missing, the copy is still there and Agent mode
+will not invent von Mises.
 
 ## CadQuery → SI copy → solvers → iterate
 

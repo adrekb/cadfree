@@ -27,6 +27,8 @@ PLAN_BLOCKED = {
     "remove_joint",
     "generate_designs",
     "commit_cots_kit",
+    "set_load_path",
+    "optimize_params",
 }
 
 
@@ -38,6 +40,7 @@ def _bind_tools(project_id: str) -> None:
             "List the user's machines, materials, CadQuery/MATLAB/FEA availability. "
             "catalog.cots_classes, cots_parts, and cots_springs are whoop / 5-inch rows, "
             "motors/props, and street-typical coils — same catalog as PETG vs PLA. "
+            "catalog.fits is ISO 286 H/h pairs + print shrink, the same way. "
             "Prices are not live stock.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             handlers["get_workshop"],
@@ -235,8 +238,10 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "lookup_formula",
             "Search the SI formula book (friction, PV, wear, pipe, aero drag, beams, "
-            "coil springs / Wahl, pin shear, 1-DOF ωn, multirotor hover). "
-            "Do not invent μ, C_d, k, or viscosity — use a book pair/fluid or ask_survey.",
+            "coil springs / Wahl, pin shear, 1-DOF ωn, pin/hole clearance, stackup, "
+            "multirotor hover). "
+            "Do not invent μ, C_d, k, ISO grades, or viscosity — use a book pair/fluid, "
+            "the fits catalog, or ask_survey.",
             {
                 "type": "object",
                 "properties": {
@@ -271,7 +276,10 @@ def _bind_tools(project_id: str) -> None:
             "Snapshot the built part as SI (metres, N, Pa) and send a mesh copy to packaged "
             "solvers: analytical formula book (always), planar pin/spring statics (mechanism), "
             "Gmsh+CalculiX FEA if installed, fluids/aero handbook + CFD handoff if "
-            "OpenFOAM/Elmer/SU2 exist. pack=spring for coil/Wahl/1-DOF. "
+            "OpenFOAM/Elmer/SU2 exist. pack=spring for coil/Wahl/1-DOF; pack=fit for "
+            "pin/hole clearance + stackup. "
+            "values.fea_bcs or set_load_path names fixtures (pick-id / holes / bbox fallback) "
+            "and load direction; default is bbox faces. "
             "Then iterate PARAMS from results[].iterate. Never invent FEA/CFD numbers.",
             {
                 "type": "object",
@@ -286,7 +294,7 @@ def _bind_tools(project_id: str) -> None:
                     "values": {"type": "object"},
                     "pack": {
                         "type": "string",
-                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor", "spring", "mechanism"],
+                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor", "spring", "mechanism", "fit"],
                     },
                     "part_id": {"type": "string"},
                 },
@@ -428,6 +436,51 @@ def _bind_tools(project_id: str) -> None:
             mutating=True,
         ),
         Tool(
+            "set_load_path",
+            "Name FEA fixtures and loads before run_solvers. "
+            "fix/load: feature_id (from list_features), pick_index (clicked STL face), "
+            "or selector holes|min_x|max_x|min_z|<Z|>Z. load_direction: -z|down|[fx,fy,fz]. "
+            "Writes constraints.fea_bcs. Bbox faces are the named fallback if nothing resolves. "
+            "Not mate-face contact FEA.",
+            {
+                "type": "object",
+                "properties": {
+                    "fea_bcs": {"type": "object"},
+                    "fix": {"type": "array"},
+                    "load": {"type": "array"},
+                    "fix_features": {"type": "array", "items": {"type": "string"}},
+                    "load_features": {"type": "array", "items": {"type": "string"}},
+                    "load_direction": {},
+                    "fix_selector": {"type": "string"},
+                    "load_selector": {"type": "string"},
+                    "direction": {},
+                    "part_id": {"type": "string"},
+                },
+            },
+            handlers["set_load_path"],
+            mutating=True,
+        ),
+        Tool(
+            "optimize_params",
+            "Search structural PARAMS against rung-0 feasibility (mass / SF / envelope) "
+            "without rewriting CadQuery each step. Scales the current mesh by PARAMS ratios. "
+            "goal=mass|sf|pareto. bounds={thickness_mm:{min,max}, ...} or default ±50%. "
+            "max_evals≈40. apply=true writes the winner via set_params — then build_model "
+            "and check_feasibility. FEA is not inside this loop; run_solvers verifies after.",
+            {
+                "type": "object",
+                "properties": {
+                    "bounds": {"type": "object"},
+                    "goal": {"type": "string", "enum": ["mass", "sf", "pareto"]},
+                    "max_evals": {"type": "integer"},
+                    "apply": {"type": "boolean"},
+                    "part_id": {"type": "string"},
+                },
+            },
+            handlers["optimize_params"],
+            mutating=True,
+        ),
+        Tool(
             "list_features",
             "CadQuery feature tree for the active part. Not a SolidWorks kernel — "
             "after build_model we wrap Workplane and stamp STL pick-ids so the user "
@@ -470,9 +523,10 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "check_feasibility",
             "Score the spec against the workshop and the catalog — same tool for a 50 lb "
-            "bracket, a drone, and a spring-return latch. Whoop vs 5-inch and coil rates live "
-            "in get_workshop.catalog. Class floors and spring solid-height/Wahl run even before "
-            "a mesh. After build_model this also does DFM, mass, and first-order strength. "
+            "bracket, a drone, and a spring-return latch. Whoop vs 5-inch, coil rates, and "
+            "ISO 286 pin/hole + print shrink live in get_workshop.catalog. Class floors, "
+            "spring solid-height/Wahl, and fit/stackup run even before a mesh. After "
+            "build_model this also does DFM, mass, and first-order strength. "
             "If joints + a load exist, planar pin forces ride along. If possible is false, "
             "say so first and name the smallest change.",
             {"type": "object", "properties": {}, "additionalProperties": False},

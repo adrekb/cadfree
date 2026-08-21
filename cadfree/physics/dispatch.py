@@ -130,7 +130,7 @@ def run_solvers(
     if "analytical" in want:
         results.append(run_analytical(status, extra, pack=pack))
     if "fea" in want or "calculix" in want or "fem" in want:
-        results.append(run_fea(status))
+        results.append(run_fea(status, values=extra))
     if "fluids" in want or "cfd" in want or "aero" in want:
         results.append(run_fluids(status, extra))
     if "mechanism" in want or pack in {"spring", "mechanism"}:

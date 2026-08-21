@@ -514,6 +514,60 @@ FORMULAS: list[dict[str, Any]] = [
         tags=("pin", "linkage", "stress"),
     ),
     _f(
+        id="fit_clearance",
+        domain="solids",
+        title="Pin/hole clearance after process shrink",
+        latex=r"c = D_{\mathrm{hole}} - d_{\mathrm{pin}} - s",
+        expr="D_hole - d_pin - shrink",
+        output="c",
+        unit="m",
+        variables={
+            "D_hole": _var(r"D_{\mathrm{hole}}", "m", "nominal hole diameter"),
+            "d_pin": _var(r"d_{\mathrm{pin}}", "m", "nominal pin diameter"),
+            "shrink": _var(r"s", "m", "hole undersize (negative = kerf oversize)", default=0.0),
+        },
+        disclaimer=(
+            "Nominal diameters minus first-order process shrink. ISO 286 envelopes live in "
+            "the fits catalog, not this one line. Not a CMM."
+        ),
+        tags=("fit", "iso", "pin", "hole"),
+        source="ISO 286 family / shop shrink rule of thumb",
+    ),
+    _f(
+        id="stackup_wc",
+        domain="solids",
+        title="Worst-case tolerance stack",
+        latex=r"T_{\mathrm{wc}} = t_1 + t_2 + t_3",
+        expr="t1 + t2 + t3",
+        output="T_wc",
+        unit="m",
+        variables={
+            "t1": _var(r"t_1", "m", "full band on dim 1 (plus+minus)"),
+            "t2": _var(r"t_2", "m", "full band on dim 2", default=0.0),
+            "t3": _var(r"t_3", "m", "full band on dim 3", default=0.0),
+        },
+        disclaimer="Arithmetic sum of bilateral bands. Not RSS, not GD&T, not a Monte Carlo.",
+        tags=("fit", "stackup", "tolerance"),
+        source="Shop stackup, first-order",
+    ),
+    _f(
+        id="stackup_rss",
+        domain="solids",
+        title="RSS tolerance stack",
+        latex=r"T_{\mathrm{rss}} = \sqrt{t_1^2 + t_2^2 + t_3^2}",
+        expr="sqrt(t1**2 + t2**2 + t3**2)",
+        output="T_rss",
+        unit="m",
+        variables={
+            "t1": _var(r"t_1", "m", "full band on dim 1 (plus+minus)"),
+            "t2": _var(r"t_2", "m", "full band on dim 2", default=0.0),
+            "t3": _var(r"t_3", "m", "full band on dim 3", default=0.0),
+        },
+        disclaimer="sqrt(Σ t_i²) on full plus+minus bands. Not a statistical Cpk, not GD&T.",
+        tags=("fit", "stackup", "tolerance"),
+        source="Shop stackup, first-order",
+    ),
+    _f(
         id="conduction",
         domain="heat",
         title="1-D conduction",
@@ -576,6 +630,12 @@ PACKS: dict[str, dict[str, Any]] = {
         "title": "Planar pin forces + springs at a pose",
         "formulas": ["pin_shear", "hooke_spring", "wahl_stress"],
         "solvers": ["mechanism", "analytical"],
+    },
+    "fit": {
+        "id": "fit",
+        "title": "Pin/hole clearance after shrink + stackup",
+        "formulas": ["fit_clearance", "stackup_wc", "stackup_rss"],
+        "solvers": ["analytical"],
     },
 }
 

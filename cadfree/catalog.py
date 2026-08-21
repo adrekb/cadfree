@@ -640,6 +640,10 @@ def catalog_payload() -> dict[str, Any]:
     from cadfree.cots.catalog import CLASSES, ITEMS, PRICE_NOTE
     from cadfree.cots.springs import PRICE_NOTE as SPRING_PRICE_NOTE
     from cadfree.cots.springs import SPRINGS
+    from cadfree.manufacturing.fits import DISCLAIMER as FIT_NOTE
+    from cadfree.manufacturing.fits import catalog_fits
+
+    FIT_ROWS = catalog_fits()
 
     parts = [
         {
@@ -663,4 +667,6 @@ def catalog_payload() -> dict[str, Any]:
         "cots_price_note": PRICE_NOTE,
         "cots_springs": SPRINGS,
         "cots_spring_price_note": SPRING_PRICE_NOTE,
+        "fits": FIT_ROWS,
+        "fits_note": FIT_NOTE,
     }

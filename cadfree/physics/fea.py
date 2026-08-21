@@ -44,19 +44,21 @@ Mesh 3;
     )
 
 
-def _append_ccx(inp: Path, status: dict[str, Any], nodes: list[tuple[int, float, float, float]]) -> None:
+def _append_ccx(
+    inp: Path,
+    status: dict[str, Any],
+    nodes: list[tuple[int, float, float, float]],
+    spec: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from cadfree.physics.bcs import resolve_bcs
+
+    resolved = resolve_bcs(status, nodes, spec=spec)
     mat = status.get("material") or {}
-    load = (status.get("load") or {}).get("F_N") or 0.0
-    xs = [n[1] for n in nodes] or [0.0]
-    xmin, xmax = min(xs), max(xs)
-    span = max(xmax - xmin, 1e-9)
-    fix = [n[0] for n in nodes if n[1] <= xmin + 0.05 * span]
-    pull = [n[0] for n in nodes if n[1] >= xmax - 0.05 * span]
-    if not fix:
-        fix = [nodes[0][0]] if nodes else [1]
-    if not pull:
-        pull = [nodes[-1][0]] if nodes else [1]
-    fx = float(load) / max(len(pull), 1)
+    load = float((status.get("load") or {}).get("F_N") or 0.0)
+    fix = resolved.get("fix_nodes") or ([nodes[0][0]] if nodes else [1])
+    pull = resolved.get("load_nodes") or ([nodes[-1][0]] if nodes else [1])
+    direction = resolved.get("direction") or [1.0, 0.0, 0.0]
+    mag = float(load) / max(len(pull), 1)
     e_pa = float(mat.get("E") or 2.1e9)
     nu = float(mat.get("nu") or 0.38)
     lines = [
@@ -71,7 +73,10 @@ def _append_ccx(inp: Path, status: dict[str, Any], nodes: list[tuple[int, float,
         lines.append(f"{nid}, 1, 3, 0.0")
     lines += ["*STEP", "*STATIC", "*CLOAD"]
     for nid in pull:
-        lines.append(f"{nid}, 1, {fx:.6g}")
+        for dof, comp in enumerate(direction, start=1):
+            if abs(float(comp)) < 1e-12:
+                continue
+            lines.append(f"{nid}, {dof}, {mag * float(comp):.6g}")
     lines += [
         "*NODE FILE",
         "U",
@@ -84,6 +89,7 @@ def _append_ccx(inp: Path, status: dict[str, Any], nodes: list[tuple[int, float,
     ]
     with inp.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
+    return resolved
 
 
 def _parse_nodes(inp: Path) -> list[tuple[int, float, float, float]]:
@@ -142,10 +148,21 @@ def _parse_stress(dat: Path) -> dict[str, float]:
     return {"von_mises_max": max_vm, "u_max": max_u}
 
 
-def run_fea(status: dict[str, Any], *, timeout: int = 120) -> dict[str, Any]:
+def run_fea(
+    status: dict[str, Any],
+    *,
+    timeout: int = 120,
+    values: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from cadfree.physics.bcs import normalize_fea_bcs, resolve_bcs
+
     probe = probe_fea()
     sim = Path((status.get("paths") or {}).get("sim") or ".")
     dest = _job_dir(sim)
+    extra = dict(values or {})
+    spec = extra.get("fea_bcs") if isinstance(extra.get("fea_bcs"), dict) else extra
+    if not normalize_fea_bcs(spec).get("fix") and not normalize_fea_bcs(spec).get("load"):
+        spec = status.get("fea_bcs")
     files = (status.get("part") or {}).get("files") or {}
     stl = files.get("stl_m") or ""
     stl_path = dest / "part_si.stl"
@@ -154,16 +171,24 @@ def run_fea(status: dict[str, Any], *, timeout: int = 120) -> dict[str, Any]:
             shutil.copy2(stl, stl_path)
         else:
             stl_path = Path(stl)
+    pick_mm = (status.get("pick") or {}).get("stl_mm") or files.get("stl_mm")
+    if pick_mm and Path(pick_mm).is_file():
+        shutil.copy2(pick_mm, dest / "part_mm.stl")
     bbox = (status.get("part") or {}).get("bbox_m") or [0.04, 0.04, 0.01]
     char = max(min(bbox) / 6.0 if bbox else 0.004, 0.0008)
     geo = dest / "part.geo"
     if stl_path.is_file():
         _write_geo(stl_path, geo, char)
+    preview = resolve_bcs(status, [], spec=spec)
     bcs = {
-        "fix": "nodes on min-x 5% of span, all DOF",
-        "load": "Fx distributed on max-x 5% of span = F_N from SI status",
+        "fix": preview.get("fix_source"),
+        "load": preview.get("load_source"),
+        "direction": preview.get("direction"),
+        "source": preview.get("source"),
         "F_N": (status.get("load") or {}).get("F_N"),
         "material": status.get("material"),
+        "notes": preview.get("notes"),
+        "spec": preview.get("spec"),
     }
     (dest / "bcs.json").write_text(
         __import__("json").dumps(bcs, indent=2, default=str), encoding="utf-8"
@@ -176,7 +201,8 @@ def run_fea(status: dict[str, Any], *, timeout: int = 120) -> dict[str, Any]:
         "handoff": str(dest),
         "geometry": str(stl_path) if stl_path.is_file() else None,
         "bcs": bcs,
-        "disclaimer": (
+        "disclaimer": preview.get("disclaimer")
+        or (
             "Linear static, isotropic E. Fixture/load are bbox faces, not your mate faces. "
             "Not anisotropic FDM. Not a sign-off."
         ),
@@ -208,7 +234,20 @@ def run_fea(status: dict[str, Any], *, timeout: int = 120) -> dict[str, Any]:
         return handoff
 
     nodes = _parse_nodes(inp)
-    _append_ccx(inp, status, nodes)
+    resolved = _append_ccx(inp, status, nodes, spec=spec)
+    bcs = resolved
+    (dest / "bcs.json").write_text(
+        __import__("json").dumps(bcs, indent=2, default=str), encoding="utf-8"
+    )
+    handoff["bcs"] = {
+        "fix": f"{len(resolved.get('fix_nodes') or [])} nodes ({resolved.get('fix_source')})",
+        "load": f"{len(resolved.get('load_nodes') or [])} nodes ({resolved.get('load_source')})",
+        "direction": resolved.get("direction"),
+        "source": resolved.get("source"),
+        "F_N": resolved.get("F_N"),
+        "notes": resolved.get("notes"),
+    }
+    handoff["disclaimer"] = resolved.get("disclaimer") or handoff["disclaimer"]
     if not probe["calculix"]["available"]:
         handoff["error"] = "Gmsh wrote an INP, but CalculiX `ccx` is not on PATH."
         handoff["inp"] = str(inp)

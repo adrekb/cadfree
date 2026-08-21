@@ -131,3 +131,6 @@ def test_agent_tools_include_generate(tmp_path, monkeypatch):
     names = set(all_tools())
     assert "generate_designs" in names
     assert "generate_designs" in PLAN_BLOCKED
+    assert "set_load_path" in names
+    assert "optimize_params" in names
+    assert "optimize_params" in PLAN_BLOCKED

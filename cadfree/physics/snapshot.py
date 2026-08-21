@@ -110,9 +110,22 @@ def _material_si(material_id: str | None, process_kind: str) -> dict[str, Any]:
     mid = material_id if material_id in MATERIALS else "petg"
     mat = resolve_material(mid)
     e_gpa = float(mat.get("flex_modulus_gpa") or 2.0)
-    nu = 0.33 if process_kind in {"metal_am", "mill"} else 0.38
+    nu = 0.33 if process_kind in {"metal_am", "mill", "cnc_mill", "cnc_router"} else 0.38
     rho = float(mat.get("density_g_cm3") or 1.2) * 1000.0
     allow = float(mat.get("tensile_xy_mpa") or 30.0) * 1e6
+    notes: list[str] = []
+    knockdown = 1.0
+    if process_kind == "fdm":
+        txy = float(mat.get("tensile_xy_mpa") or 0) or 1.0
+        tz = float(mat.get("tensile_z_mpa") or txy)
+        knockdown = min(1.0, max(tz, 1e-9) / txy)
+        if knockdown < 0.999:
+            e_gpa *= knockdown
+            allow *= knockdown
+            notes.append(
+                f"FDM isotropic knockdown {knockdown:.2f} = tensile_z/tensile_xy on E and allowable. "
+                "Not mapped orthotropic layers."
+            )
     return {
         "id": mat.get("id") or mid,
         "name": mat.get("name"),
@@ -123,6 +136,8 @@ def _material_si(material_id: str | None, process_kind: str) -> dict[str, Any]:
         "tensile_xy_mpa": mat.get("tensile_xy_mpa"),
         "tensile_z_mpa": mat.get("tensile_z_mpa"),
         "process_kind": process_kind,
+        "fdm_knockdown": knockdown if process_kind == "fdm" else 1.0,
+        "notes": notes,
     }
 
 
@@ -267,13 +282,28 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
             inputs["n"] = float(constraints["n_active"])
     except (TypeError, ValueError):
         pass
+    hole_d = constraints.get("hole_d_mm") or params.get("hole_d_mm")
+    try:
+        if hole_d is not None:
+            inputs["D_hole"] = float(hole_d) * MM
+            from cadfree.manufacturing.fits import shrink_mm as _shrink_mm
+
+            s_mm, _ = _shrink_mm(process_kind, float(hole_d))
+            if constraints.get("shrink_mm") is not None:
+                s_mm = float(constraints["shrink_mm"])
+            inputs["shrink"] = s_mm * MM
+        if pin_d is not None:
+            inputs["d_pin"] = float(pin_d) * MM
+    except (TypeError, ValueError):
+        pass
     provenance = {
         "L": "max bbox edge from mesh (m)",
         "b": "middle bbox edge from mesh (m)",
         "t": "min thickness or min bbox edge from mesh (m)",
         "A": "largest projected bbox face from mesh (m^2)",
         "D": "PARAMS hole_d_mm or min bbox (m)",
-        "E": f"catalog {material['id']} flex_modulus → Pa",
+        "E": f"catalog {material['id']} flex_modulus → Pa"
+        + (f" × FDM knockdown {material.get('fdm_knockdown'):.2f}" if (material.get("fdm_knockdown") or 1) < 0.999 else ""),
         "F_N": "constraints load_* converted to N" if load is not None else "missing — survey load",
         "v": "constraints v_ms / rpm" if v_ms is not None else "missing — survey speed if fluids/friction",
         "mu": "constraints mu or book pair" if mu is not None else "missing — do not invent μ",
@@ -306,12 +336,18 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
             "files": files,
             "built": bool(files.get("stl_mm")),
         },
+        "pick": {
+            "stl_mm": files.get("stl_mm"),
+            "live": str(part_dir(project_id, part["id"]) / "features.live.json"),
+        },
         "material": material,
         "load": {
             "F_N": load,
             "direction": constraints.get("load_direction") or "tip / longest span",
             "safety_factor": float(constraints.get("safety_factor") or 2.0),
         },
+        "fea_bcs": constraints.get("fea_bcs"),
+        "project_id": project_id,
         "environment": {
             "fluid": fluid_name,
             "rho": fluid["rho"],
@@ -332,7 +368,8 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
             "Projected area is bbox faces, not a wind-tunnel silhouette.",
             "Cd defaults to 1.0 (blunt body) in the formula book when unset.",
             "Not a certified coupon. Solvers must not be faked if missing.",
-        ],
+        ]
+        + list(material.get("notes") or []),
         "paths": {"sim": str(dest), "status": str(dest / "status.json")},
     }
     (dest / "status.json").write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")

@@ -182,6 +182,10 @@ CONSTRAINT_KEYS = {
     "mean_d_mm",
     "n_active",
     "mass_kg",
+    "hole_d_mm",
+    "fit",
+    "stackup_limit_mm",
+    "shrink_mm",
 }
 
 FLOAT_KEYS = {
@@ -208,6 +212,9 @@ FLOAT_KEYS = {
     "mean_d_mm",
     "n_active",
     "mass_kg",
+    "hole_d_mm",
+    "stackup_limit_mm",
+    "shrink_mm",
 }
 
 BOOL_KEYS = {"printed_frame", "cots_electronics", "confirm_kit"}

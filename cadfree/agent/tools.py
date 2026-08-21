@@ -45,6 +45,7 @@ from cadfree.cots.kit import commit_cots_kit, search_parts
 from cadfree.cots.score import catalog_spec_overlay
 from cadfree.cots.springs import spring_spec_overlay
 from cadfree.kinematics.loads import mechanism_load_overlay
+from cadfree.manufacturing.fits import fit_spec_overlay
 
 
 def _row(project_id: str) -> dict[str, Any]:
@@ -116,6 +117,18 @@ def _save_build(project_id: str, built: dict[str, Any], feasibility: dict[str, A
         )
 
 
+def _update_constraints(project_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    with db() as conn:
+        row = conn.execute("SELECT constraints FROM projects WHERE id = ?", (project_id,)).fetchone()
+        constraints = json.loads((row["constraints"] if row else None) or "{}")
+        constraints.update(patch)
+        conn.execute(
+            "UPDATE projects SET constraints = ?, updated_at = datetime('now') WHERE id = ?",
+            (json.dumps(constraints), project_id),
+        )
+    return constraints
+
+
 def _last_solvers(project_id: str) -> dict[str, Any] | None:
     path = project_dir(project_id) / "sim" / "last.json"
     if not path.is_file():
@@ -173,6 +186,101 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         source = apply_params(part.get("cadquery_source") or "", params)
         saved = _save_source(project_id, source, part["id"])
         return {"ok": True, "params": extract_params(source), "part_id": saved["id"]}
+
+    def optimize(
+        bounds: dict[str, Any] | None = None,
+        goal: str = "pareto",
+        max_evals: int = 40,
+        apply: bool = False,
+        part_id: str | None = None,
+    ) -> dict[str, Any]:
+        from cadfree.cad.optimize import optimize_params as _opt
+
+        p = _row(project_id)
+        ensure_default_part(project_id, p.get("cadquery_source") or "")
+        part = get_part(project_id, part_id)
+        caps = _caps(json.loads(p["capability_ids"] or "[]"))
+        constraints = json.loads(p["constraints"] or "{}")
+        work = project_dir(project_id)
+        stl = part_dir(project_id, part["id"]) / "model.stl"
+        if not stl.is_file():
+            stl = work / "model.stl"
+        metrics = _metrics(p, stl.parent) if stl.is_file() else _metrics(p, work)
+        if metrics is None:
+            return {
+                "ok": False,
+                "error": "Build the model before optimize_params. The loop scales the current mesh; it does not rebuild CadQuery per eval.",
+            }
+        params = extract_params(part.get("cadquery_source") or p.get("cadquery_source") or "")
+        out = _opt(
+            metrics,
+            caps,
+            constraints,
+            params,
+            bounds=bounds,
+            goal=goal or "pareto",
+            max_evals=int(max_evals or 40),
+        )
+        if apply and out.get("ok") and (out.get("winner") or {}).get("params"):
+            winner = out["winner"]["params"]
+            keys = set((out.get("bounds") or {}).keys()) or set(winner)
+            patch = {k: winner[k] for k in keys if k in winner}
+            source = apply_params(part.get("cadquery_source") or "", patch)
+            saved = _save_source(project_id, source, part["id"])
+            out["applied"] = True
+            out["params"] = extract_params(source)
+            out["part_id"] = saved["id"]
+            out["note"] = (
+                "PARAMS patched. Call build_model then check_feasibility. "
+                "CadQuery was not rebuilt inside the search. FEA is for verifying the winner."
+            )
+        else:
+            out["applied"] = False
+        return out
+
+    def set_load_path(
+        fea_bcs: dict[str, Any] | None = None,
+        fix: Any = None,
+        load: Any = None,
+        fix_features: Any = None,
+        load_features: Any = None,
+        load_direction: Any = None,
+        fix_selector: str = "",
+        load_selector: str = "",
+        direction: Any = None,
+        part_id: str | None = None,
+    ) -> dict[str, Any]:
+        from cadfree.physics.bcs import normalize_fea_bcs
+
+        blob = dict(fea_bcs or {})
+        if fix is not None:
+            blob["fix"] = fix
+        if load is not None:
+            blob["load"] = load
+        if fix_features is not None:
+            blob["fix_features"] = fix_features
+        if load_features is not None:
+            blob["load_features"] = load_features
+        if load_direction is not None:
+            blob["load_direction"] = load_direction
+        if direction is not None:
+            blob.setdefault("load_direction", direction)
+        if fix_selector:
+            blob["fix_selector"] = fix_selector
+        if load_selector:
+            blob["load_selector"] = load_selector
+        spec = normalize_fea_bcs(blob)
+        _update_constraints(project_id, {"fea_bcs": spec})
+        return {
+            "ok": True,
+            "fea_bcs": spec,
+            "part_id": part_id,
+            "note": (
+                "BCs stored on the project. Call run_solvers solvers=['fea'] after build_model. "
+                "Pick-ids need a rebuild so the STL is stamped. Holes can use selector='holes' "
+                "from PARAMS if picks are missing. Bbox faces are the named fallback."
+            ),
+        }
 
     def list_features(part_id: str | None = None) -> dict[str, Any]:
         part = get_part(project_id, part_id)
@@ -254,7 +362,12 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         overlay_v = catalog_spec_overlay(constraints)
         overlay_s = spring_spec_overlay(constraints)
         overlay_m = mechanism_load_overlay(project_id, constraints)
-        overlays = [o for o in (overlay_v, overlay_s, overlay_m) if o]
+        params = extract_params(active.get("cadquery_source") or p.get("cadquery_source") or "")
+        cons_fit = dict(constraints)
+        if not cons_fit.get("process_kind") and caps:
+            cons_fit["process_kind"] = caps[0].get("kind") or "fdm"
+        overlay_f = fit_spec_overlay(cons_fit, params)
+        overlays = [o for o in (overlay_v, overlay_s, overlay_m, overlay_f) if o]
 
         def _apply_overlays(data: dict[str, Any]) -> dict[str, Any]:
             if overlay_v:
@@ -263,6 +376,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
                 data["catalog_spring"] = overlay_s.get("score")
             if overlay_m:
                 data["mechanism_loads"] = overlay_m.get("score")
+            if overlay_f:
+                data["catalog_fit"] = overlay_f.get("score")
             if not overlays:
                 return data
             for o in overlays:
@@ -540,6 +655,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "get_project": get_project,
         "write_cadquery": write_cadquery,
         "set_params": set_params,
+        "set_load_path": set_load_path,
+        "optimize_params": optimize,
         "list_features": list_features,
         "patch_feature": patch_one_feature,
         "build_model": build_model,

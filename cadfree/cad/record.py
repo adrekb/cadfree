@@ -70,6 +70,30 @@ def read_stl_pick_ids(data: bytes) -> list[int]:
     return ids
 
 
+def read_stl_triangles(data: bytes) -> list[dict[str, Any]]:
+    """Binary STL triangles including the uint16 pick-id attribute."""
+    if len(data) < 84:
+        return []
+    n = struct.unpack_from("<I", data, 80)[0]
+    tris: list[dict[str, Any]] = []
+    off = 84
+    for _ in range(n):
+        if off + 50 > len(data):
+            break
+        vals = struct.unpack_from("<12fH", data, off)
+        tris.append(
+            {
+                "n": (vals[0], vals[1], vals[2]),
+                "v0": (vals[3], vals[4], vals[5]),
+                "v1": (vals[6], vals[7], vals[8]),
+                "v2": (vals[9], vals[10], vals[11]),
+                "attr": int(vals[12]),
+            }
+        )
+        off += 50
+    return tris
+
+
 def attach_live(features: list[dict[str, Any]], live: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Zip recorded modeling ops onto the AST feature list by kind order."""
     if not live:
