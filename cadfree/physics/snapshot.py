@@ -284,12 +284,12 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
     if q is not None:
         inputs["Q"] = q
         inputs["Q_m3s"] = q
-    for src_key, dest in (("p_inlet_pa", "p_inlet"), ("npshr_m", "NPSHr"), ("target_H_m", "target_H"), ("blockage", "psi")):
+    for src_key, si_key in (("p_inlet_pa", "p_inlet"), ("npshr_m", "NPSHr"), ("target_H_m", "target_H"), ("blockage", "psi")):
         raw = constraints.get(src_key)
         if raw is None:
             continue
         try:
-            inputs[dest] = float(raw)
+            inputs[si_key] = float(raw)
             inputs[src_key] = float(raw)
         except (TypeError, ValueError):
             pass

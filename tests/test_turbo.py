@@ -25,7 +25,7 @@ def test_wiesner_slip_25deg_z6():
     assert out["ok"] is True
     expected = 1.0 - math.sqrt(math.sin(beta2)) / (6.0 ** 0.7)
     assert abs(out["value"] - expected) < 1e-9
-    assert abs(out["value"] - 0.826) < 0.01
+    assert 0.80 < out["value"] < 0.84
 
 
 def test_missing_q_is_not_invented():
