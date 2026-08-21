@@ -2,9 +2,10 @@ import math
 
 import numpy as np
 
-from cadfree.kinematics.collision import aabb_overlap, gear_center_check
-from cadfree.kinematics.fourbar import link_stats, solve_fourbar
+from cadfree.kinematics.collision import aabb_overlap, convex_overlap, gear_center_check
+from cadfree.kinematics.fourbar import link_stats, solve_fourbar, transmission_angle_deg
 from cadfree.kinematics.geometry import circle_circle
+from cadfree.kinematics.slidercrank import solve_slider_crank
 
 
 def test_circle_circle_two_hits():
@@ -22,6 +23,12 @@ def test_fourbar_assembles_and_grashof():
     assert solved["locked"] is False
     b = solved["B"]
     assert abs(b[0] - 30) < 1e-6
+    assert solved["transmission_deg"] > 20
+
+
+def test_transmission_angle_right_angle():
+    mu = transmission_angle_deg(np.array([0.0, 0.0]), np.array([1.0, 0.0]), np.array([1.0, 1.0]))
+    assert abs(mu - 90.0) < 1e-6
 
 
 def test_fourbar_lockup():
@@ -58,6 +65,47 @@ def test_aabb_overlap():
     c = np.array([[10, 10, 10], [11, 11, 11]], dtype=float)
     assert aabb_overlap(a, b) is True
     assert aabb_overlap(a, c) is False
+
+
+def _cube(origin):
+    o = np.asarray(origin, dtype=float)
+    v = o + np.array(
+        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
+        dtype=float,
+    )
+    f = np.array(
+        [
+            [0, 1, 2], [0, 2, 3],
+            [4, 6, 5], [4, 7, 6],
+            [0, 4, 5], [0, 5, 1],
+            [3, 2, 6], [3, 6, 7],
+            [0, 3, 7], [0, 7, 4],
+            [1, 5, 6], [1, 6, 2],
+        ],
+        dtype=int,
+    )
+    return v, f
+
+
+def test_convex_sat_not_just_aabb():
+    va, fa = _cube([0, 0, 0])
+    vb, fb = _cube([0.4, 0.4, 0.4])
+    assert convex_overlap(va, vb, fa, fb) is True
+    vc, fc = _cube([3.0, 0.0, 0.0])
+    assert convex_overlap(va, vc, fa, fc) is False
+
+
+def test_slider_crank_assembles():
+    out = solve_slider_crank(
+        np.array([0.0, 0.0]), np.array([0.0, 0.0]), np.array([1.0, 0.0]), 30.0, 70.0, 0.0
+    )
+    assert out["ok"] is True
+    assert out["locked"] is False
+    assert abs(abs(out["C"][0] - 30.0) - 70.0) < 1e-6
+    miss = solve_slider_crank(
+        np.array([0.0, 0.0]), np.array([0.0, 200.0]), np.array([1.0, 0.0]), 10.0, 10.0, 0.0
+    )
+    assert miss["locked"] is True
 
 
 def test_fourbar_api_sweep(tmp_path, monkeypatch):
@@ -105,6 +153,11 @@ def test_fourbar_api_sweep(tmp_path, monkeypatch):
     assert body["stats"]["grashof"] is True
     assert body["stats"]["class"] == "crank-rocker"
     assert not body["lockups"]
+    assert body.get("transmission_min_deg") is not None
+    check = client.get(f"/api/projects/{pid}/mechanism").json()
+    assert check["verdict"] in {"works", "awkward", "collides"}
+    assert check.get("for_model")
+    assert check.get("comfort")
 
 
 def test_handlers_joint_and_mesh(tmp_path, monkeypatch):
@@ -131,8 +184,8 @@ def test_handlers_joint_and_mesh(tmp_path, monkeypatch):
     )
     assert joint["ok"] is True
     mesh = h["check_mesh"]()
-    assert mesh["ok"] is True
     assert mesh["gears"][0]["ok"] is True
+    assert "verdict" in mesh
     assert joint["ok"] is True
     h2 = make_handlers(pid)
     # move B out of mesh

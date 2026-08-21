@@ -91,9 +91,12 @@ not CFD and not a Motion study.
 
 OCCT will not tell you if a four-bar locks. Cadfree adds joints on assembly
 instances and a **planar four-bar** solver (Grashof + two-circle intersection),
-open revolute/prismatic chains, and a spur-gear **pitch-diameter** check.
-Sweeping the input reports lock-up and AABB clashes of posed meshes. Pins that
+a **slider-crank**, open revolute/prismatic chains, and a spur-gear **pitch-diameter**
+check. Sweeping the input reports lock-up, **convex-hull SAT** clashes of posed
+meshes, and the min **transmission angle** (below 40° is awkward). Pins that
 share a joint are ignored. This is not contact dynamics and not a Motion study.
+The studio Play/Check strip and the agent `check_mechanism` tool share that
+verdict.
 
 ## What we will not do
 

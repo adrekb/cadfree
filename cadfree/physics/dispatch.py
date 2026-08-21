@@ -34,7 +34,7 @@ def probe_solvers() -> dict[str, Any]:
         "matlab": find_engine(),
         "kinematics": {
             "available": True,
-            "label": "Planar four-bar / open chain / gear pitch + AABB clash",
+            "label": "Planar four-bar / slider-crank / open chain / gear pitch + convex-hull SAT",
         },
         "first_order": {"available": True, "label": "Closed-form cantilever (always on)"},
         "topology": probe_generate(),

@@ -30,6 +30,7 @@ from cadfree.search.standards import read_url, search_standards
 from cadfree.simulation.pipeline import probe as sim_probe, simulate
 from cadfree.kinematics.mechanism import (
     check_gears,
+    check_mechanism,
     list_joints,
     remove_joint,
     sweep_mechanism,
@@ -356,9 +357,14 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         return sweep_mechanism(project_id, start_deg, end_deg, steps, include_frames=False)
 
     def mesh_check() -> dict[str, Any]:
-        gears = check_gears(project_id)
-        rest = sweep_mechanism(project_id, 0, 0, 2, include_frames=False)
-        return {"ok": True, "gears": gears, "at_rest": rest}
+        return check_mechanism(project_id)
+
+    def mechanism_check(
+        start_deg: float = 0.0,
+        end_deg: float = 360.0,
+        steps: int = 36,
+    ) -> dict[str, Any]:
+        return check_mechanism(project_id, start_deg, end_deg, steps)
 
     def lookup_f(query: str, domain: str = "") -> dict[str, Any]:
         return lookup_formula(query, domain=domain or None)
@@ -456,6 +462,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "remove_joint": drop_joint,
         "sweep_mechanism": sweep,
         "check_mesh": mesh_check,
+        "check_mechanism": mechanism_check,
         "lookup_formula": lookup_f,
         "solve_formula": solve_f,
         "run_solvers": solvers,

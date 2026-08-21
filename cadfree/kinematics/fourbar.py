@@ -67,6 +67,7 @@ def solve_fourbar(
             "reason": "circles miss — linkage is at a lock-up / cannot assemble at this angle",
         }
     c = pick_closer(hits, prev_c)
+    mu = transmission_angle_deg(b, c, d)
     return {
         "ok": True,
         "locked": False,
@@ -74,4 +75,21 @@ def solve_fourbar(
         "C": c.tolist(),
         "crank_angle_rad": theta_rad,
         "rocker_angle_rad": math.atan2(c[1] - d[1], c[0] - d[0]),
+        "transmission_deg": mu,
     }
+
+
+def transmission_angle_deg(b: np.ndarray, c: np.ndarray, d: np.ndarray) -> float:
+    """Angle between coupler BC and follower CD. 90° is ideal; below ~40° is awkward."""
+    b = np.asarray(b, dtype=float)
+    c = np.asarray(c, dtype=float)
+    d = np.asarray(d, dtype=float)
+    v1 = c - b
+    v2 = d - c
+    n1 = float(np.linalg.norm(v1))
+    n2 = float(np.linalg.norm(v2))
+    if n1 < 1e-9 or n2 < 1e-9:
+        return 0.0
+    cos = float(np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0))
+    ang = math.degrees(math.acos(cos))
+    return min(ang, 180.0 - ang)

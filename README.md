@@ -17,7 +17,7 @@ The UI is **Carrot’s** glass workspace (same stylesheet, Monaco editor, Plan/A
 - **Adjustable thinking** — Think **off / low / high / max**. High is the default. DeepSeek is **not vision-native**.
 - **Vision** — OpenAI (`gpt-4.1`, `gpt-4o`), Anthropic, Gemini (`gemini-2.5-flash` / `pro`), and OpenRouter vision models read drawings/photos attached in chat. Default provider is OpenAI, not DeepSeek.
 - **Assemblies** — shop-scale: unique parts (≤32 solids) + GPU-instanced placements with linear/grid/circular/mirror patterns (cap 400). Nested `parent_id` multiplies children. Fasteners are BOM-only.
-- **Linkages** — CadQuery will not simulate motion. Joints (revolute / prismatic / gear) + a planar four-bar solver + AABB clash along a drive sweep. Gear check is pitch diameters. Not SolidWorks Motion.
+- **Linkages** — CadQuery will not simulate motion. Joints (revolute / prismatic / gear) + planar four-bar + slider-crank + convex-hull SAT along a drive sweep. Transmission angle and Grashof for comfort. Gear check is pitch diameters. Studio **Play** / **Check**. Agent `check_mechanism`. Not SolidWorks Motion.
 - **Physics loop** — CadQuery authors the solid. `run_solvers` snapshots it in SI, copies the mesh into packaged solvers (formula book always; Gmsh+CalculiX if present; fluids/aero handbook + CFD handoff), then `iterate` PARAMS and rebuild. Math is LaTeX in the studio. Not Ansys.
 - **Generative design** — Fusion Generative Design analogue: Sigmund / Liu–Tovar **SIMP** on a voxel copy of that SI mesh (`generate_designs` / studio **Generate**). Mill 2.5-D and AM overhang filters. Organic STL candidates are imported meshes — CadQuery is not rewritten. Needs `pip install 'cadfree[physics]'` (scipy). Not Autodesk cloud, not nTopology.
 

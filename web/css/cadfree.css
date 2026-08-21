@@ -231,6 +231,11 @@ h1, h2, h3, h4,
   align-items: center;
 }
 .motion-strip input[type=range] { width: 180px; }
+.joints-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.joint-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted);
+}
 .parts-strip {
   display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px;
   border-bottom: 1px solid var(--border); background: var(--bg2);

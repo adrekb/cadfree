@@ -41,11 +41,14 @@ Rules:
   kind=imported meshes; PARAMS do not apply; place them, do not rewrite as
   CadQuery unless asked.
 - LINKAGES / MESH: CadQuery will not simulate motion. Use `define_joint`
-  (revolute / prismatic / gear) then `sweep_mechanism` to ask “if I turn this
-  crank, does the rocker move, does it lock, do bodies clash?” Four revolutes
-  on ground-crank-coupler-rocker is a planar four-bar (Grashof + circle
-  intersection). `check_mesh` is a spur-gear pitch-diameter check. Collision
-  is AABB of posed meshes, not a Motion study.
+  (revolute / prismatic / gear) then `check_mechanism` so YOU verify the
+  linkage: does the crank turn, does it lock, do bodies clash, is the
+  transmission angle comfortable (≥40°), do gears mesh at pitch diameters?
+  Four revolutes ground-crank-coupler-rocker is a planar four-bar (Grashof
+  + circle intersection). One prismatic + crank/rod is a slider-crank.
+  `sweep_mechanism` is the same sweep with optional frames for the studio.
+  Collision is SAT on convex hulls, not AABB-as-truth and not a Motion study.
+  Cite `verdict` / `for_model`. Never claim SolidWorks Motion.
 - After every geometry change, call `build_model` (optional part_id) for each
   unique solid you changed, then `check_feasibility`.
 - If the user attached a drawing or photo, READ IT. Extract dimensions,

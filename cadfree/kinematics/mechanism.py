@@ -31,6 +31,7 @@ from cadfree.kinematics.geometry import (
     to_2d,
     vec3,
 )
+from cadfree.kinematics.slidercrank import solve_slider_crank
 from cadfree.store.db import db
 
 JOINT_KINDS = ("revolute", "prismatic", "fixed", "gear")
@@ -306,7 +307,113 @@ def _pose_fourbar(
         "loop": loop,
         "poses": poses,
         "C2": c1,
+        "transmission_deg": solved.get("transmission_deg"),
         "pivots": {"A": a_keep.tolist(), "B": b3n.tolist(), "C": c3n.tolist(), "D": d_keep.tolist()},
+    }
+
+
+def _detect_slider_crank(joints: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """ground–crank–rod–slider with one prismatic on the slider."""
+    pris = [j for j in joints if j.get("kind") == "prismatic"]
+    revs = [j for j in joints if j.get("kind") == "revolute"]
+    if len(pris) != 1 or len(revs) < 2:
+        return None
+    slider_j = pris[0]
+    slider = _node(slider_j, "instance_b")
+    if slider == "ground":
+        return None
+    driven = next((j for j in revs if j.get("driven")), None)
+    if not driven:
+        return None
+    crank = _node(driven, "instance_b")
+    if crank in {"ground", slider}:
+        return None
+
+    def between(a: str, b: str) -> dict[str, Any] | None:
+        want = {a, b}
+        for j in revs:
+            if {_node(j, "instance_a"), _node(j, "instance_b")} == want:
+                return j
+        return None
+
+    for j_bc in revs:
+        nodes = {_node(j_bc, "instance_a"), _node(j_bc, "instance_b")}
+        if crank not in nodes:
+            continue
+        rod = next(n for n in nodes if n != crank)
+        if rod in {"ground", crank, slider}:
+            continue
+        j_cd = between(rod, slider)
+        if j_cd:
+            return {
+                "crank": crank,
+                "rod": rod,
+                "slider": slider,
+                "j_ab": driven,
+                "j_bc": j_bc,
+                "j_cd": j_cd,
+                "j_s": slider_j,
+            }
+    return None
+
+
+def _pose_slider_crank(
+    rest: dict[str, Any],
+    loop: dict[str, Any],
+    drive_rad: float,
+    prev_s: float | None,
+) -> dict[str, Any]:
+    j_ab, j_s = loop["j_ab"], loop["j_s"]
+    axis = vec3(j_ab.get("axis"))
+    e1, e2, k = plane_basis(axis)
+    a3 = _pivot_world(j_ab, rest)
+    b3 = _pivot_world(loop["j_bc"], rest)
+    c3 = _pivot_world(loop["j_cd"], rest)
+    origin = a3 - float(np.dot(a3, k)) * k
+    a = to_2d(a3, origin, e1, e2)
+    b0 = to_2d(b3, origin, e1, e2)
+    c0 = to_2d(c3, origin, e1, e2)
+    slide_ax = vec3(j_s.get("axis"), default=(1.0, 0.0, 0.0))
+    u2 = np.array([float(np.dot(slide_ax, e1)), float(np.dot(slide_ax, e2))])
+    if float(np.linalg.norm(u2)) < 1e-6:
+        u2 = np.array([1.0, 0.0])
+    l1 = float(np.linalg.norm(b0 - a))
+    l2 = float(np.linalg.norm(c0 - b0))
+    if min(l1, l2) < 1e-6:
+        return {"ok": False, "error": "slider-crank pins are coincident — set joint origin mm"}
+    theta0 = math.atan2(b0[1] - a[1], b0[0] - a[0])
+    solved = solve_slider_crank(a, c0, u2, l1, l2, theta0 + drive_rad, prev_s)
+    if not solved.get("ok"):
+        return {**solved, "loop": loop}
+    b1 = np.array(solved["B"])
+    c1 = np.array(solved["C"])
+    ha, hb, hc = float(np.dot(a3, k)), float(np.dot(b3, k)), float(np.dot(c3, k))
+    b3n = from_2d(b1, origin, e1, e2, hb, k)
+    c3n = from_2d(c1, origin, e1, e2, hc, k)
+    a_keep = from_2d(a, origin, e1, e2, ha, k)
+
+    crank_m = np.array(rest["by_id"][loop["crank"]]["matrix"], dtype=float)
+    rod_m = np.array(rest["by_id"][loop["rod"]]["matrix"], dtype=float)
+    slider_m = np.array(rest["by_id"][loop["slider"]]["matrix"], dtype=float)
+    d_crank = math.atan2(b1[1] - a[1], b1[0] - a[0]) - theta0
+    crank_m = rotate_around(crank_m, a_keep, k, d_crank)
+    v0, v1 = c0 - b0, c1 - b1
+    ang0 = math.atan2(v0[1], v0[0])
+    ang1 = math.atan2(v1[1], v1[0])
+    rod_m = rotate_around(rod_m, b3, k, ang1 - ang0)
+    rod_m = rod_m.copy()
+    rod_m[:3, 3] = rod_m[:3, 3] + (b3n - b3)
+    slider_m = slider_m.copy()
+    slider_m[:3, 3] = slider_m[:3, 3] + (c3n - c3)
+    return {
+        "ok": True,
+        "locked": False,
+        "loop": loop,
+        "poses": {loop["crank"]: crank_m, loop["rod"]: rod_m, loop["slider"]: slider_m},
+        "C2": c1,
+        "s": solved.get("s"),
+        "slide_mm": solved.get("slide_mm"),
+        "pivots": {"A": a_keep.tolist(), "B": b3n.tolist(), "C": c3n.tolist()},
     }
 
 
@@ -351,6 +458,7 @@ def pose_at(project_id: str, drive_deg: float, prev_c: np.ndarray | None = None)
     rest = _rest_state(project_id)
     drive_rad = math.radians(float(drive_deg))
     loop = _detect_fourbar(joints)
+    slider = None if loop else _detect_slider_crank(joints)
     moved: dict[str, np.ndarray] = {iid: np.array(info["matrix"], dtype=float) for iid, info in rest["by_id"].items()}
     meta: dict[str, Any] = {"kind": "rest", "ok": True, "locked": False}
     if loop:
@@ -358,9 +466,16 @@ def pose_at(project_id: str, drive_deg: float, prev_c: np.ndarray | None = None)
         meta = {k: v for k, v in result.items() if k != "poses"}
         if result.get("ok"):
             moved.update(result["poses"])
-            meta["kind"] = "fourbar"
-        else:
-            meta["kind"] = "fourbar"
+        meta["kind"] = "fourbar"
+    elif slider:
+        prev_s = float(prev_c[0]) if prev_c is not None and np.size(prev_c) else None
+        result = _pose_slider_crank(rest, slider, drive_rad, prev_s)
+        meta = {k: v for k, v in result.items() if k != "poses"}
+        if result.get("ok"):
+            moved.update(result["poses"])
+        meta["kind"] = "slider-crank"
+        if result.get("s") is not None:
+            meta["C2"] = [float(result["s"]), 0.0]
     elif joints:
         moved = _open_chain_poses(rest, joints, float(drive_deg))
         meta = {"kind": "open-chain", "ok": True, "locked": False}
@@ -380,8 +495,14 @@ def pose_at(project_id: str, drive_deg: float, prev_c: np.ndarray | None = None)
     }
 
 
-def _scene_draws(project_id: str, matrices: dict[str, np.ndarray]) -> list[dict[str, Any]]:
+def _scene_draws(
+    project_id: str,
+    matrices: dict[str, np.ndarray],
+    clash_ids: set[str] | None = None,
+    locked: bool = False,
+) -> list[dict[str, Any]]:
     scene = assembly_scene(project_id)
+    clash_ids = clash_ids or set()
     draws = []
     for d in scene.get("draws") or []:
         iid = d.get("instance_id") or ""
@@ -389,6 +510,8 @@ def _scene_draws(project_id: str, matrices: dict[str, np.ndarray]) -> list[dict[
         item = dict(d)
         if m is not None:
             item["matrix"] = matrix_colmajor(m)
+        item["clash"] = iid in clash_ids
+        item["locked"] = bool(locked)
         draws.append(item)
     return draws
 
@@ -427,6 +550,8 @@ def _collisions(project_id: str, matrices: dict[str, np.ndarray], joints: list[d
                         {
                             "a": rest["by_id"][ia].get("name") or ia,
                             "b": rest["by_id"][ib].get("name") or ib,
+                            "a_id": ia,
+                            "b_id": ib,
                         }
                     )
             except Exception:
@@ -491,6 +616,8 @@ def sweep_mechanism(
     frames: list[dict[str, Any]] = []
     last_kind = "open-chain"
     stats = None
+    trans: list[float] = []
+    slides: list[float] = []
     for i in range(steps):
         t = i / (steps - 1)
         deg = start + t * (end - start)
@@ -499,21 +626,36 @@ def sweep_mechanism(
         stats = posed.get("stats") or stats
         if posed.get("prev_c") is not None:
             prev_c = np.array(posed["prev_c"], dtype=float)
-        locked = bool(posed.get("locked"))
+        locked = bool(posed.get("locked")) or not posed.get("ok", True)
         hits = []
-        if posed.get("ok") and posed.get("matrices"):
+        if posed.get("ok") and posed.get("matrices") and not locked:
             hits = _collisions(project_id, posed["matrices"], joints)
+        mu = posed.get("transmission_deg")
+        if mu is not None and posed.get("ok"):
+            trans.append(float(mu))
+        if posed.get("slide_mm") is not None and posed.get("ok"):
+            slides.append(float(posed["slide_mm"]))
         if locked:
             lockups.append({"deg": round(deg, 2), "reason": posed.get("reason") or posed.get("error")})
         if hits:
             collisions.append({"deg": round(deg, 2), "hits": hits})
+        clash_ids: set[str] = set()
+        for h in hits:
+            if h.get("a_id"):
+                clash_ids.add(h["a_id"])
+            if h.get("b_id"):
+                clash_ids.add(h["b_id"])
         if include_frames:
             frames.append(
                 {
                     "deg": round(deg, 2),
                     "locked": locked,
                     "hits": hits,
-                    "draws": _scene_draws(project_id, posed.get("matrices") or {}),
+                    "transmission_deg": mu,
+                    "slide_mm": posed.get("slide_mm"),
+                    "draws": _scene_draws(
+                        project_id, posed.get("matrices") or {}, clash_ids, locked=locked
+                    ),
                 }
             )
     gears = check_gears(project_id)
@@ -524,12 +666,16 @@ def sweep_mechanism(
             clear_hi = first
         else:
             clear_lo, clear_hi = start, start
+    trans_min = min(trans) if trans else None
+    trans_max = max(trans) if trans else None
     summary_bits = [f"{last_kind} sweep {start:g}→{end:g}° in {steps} steps"]
     if stats:
         summary_bits.append("Grashof" if stats.get("grashof") else "not Grashof")
         summary_bits.append(stats.get("class") or "")
+    if trans_min is not None:
+        summary_bits.append(f"min transmission {trans_min:.0f}°")
     if not lockups and not collisions:
-        summary_bits.append("clears the travel (convex hulls, pin mates ignored)")
+        summary_bits.append("clears the travel (convex-hull SAT, pin mates ignored)")
     if lockups:
         summary_bits.append(f"lock-up at {lockups[0]['deg']}°")
     if collisions:
@@ -543,13 +689,102 @@ def sweep_mechanism(
         "gears": gears,
         "lockups": lockups,
         "collisions": collisions,
+        "transmission_min_deg": trans_min,
+        "transmission_max_deg": trans_max,
+        "slide_mm_range": [min(slides), max(slides)] if slides else None,
         "clear_deg": [clear_lo, clear_hi] if not lockups else [],
         "steps": steps,
         "frames": frames if include_frames else [],
         "summary": "; ".join(x for x in summary_bits if x),
         "disclaimer": (
-            "Kinematics, not CadQuery. Planar four-bar / open chain / gear ratio. "
-            "Collision is convex hulls of the tessellated meshes — pins that share a joint "
-            "are ignored. Not contact dynamics, not a Motion study sign-off."
+            "Kinematics, not CadQuery. Planar four-bar / slider-crank / open chain / gear ratio. "
+            "Collision is SAT on convex hulls of the tessellated meshes — pins that share a joint "
+            "are ignored. Not contact dynamics, not SolidWorks Motion."
         ),
+    }
+
+
+def check_mechanism(
+    project_id: str,
+    start_deg: float = 0.0,
+    end_deg: float = 360.0,
+    steps: int = 36,
+) -> dict[str, Any]:
+    """One-shot 'does this linkage work?' for the agent and the studio."""
+    joints = list_joints(project_id)
+    if not joints:
+        return {
+            "ok": False,
+            "verdict": "no_joints",
+            "works": False,
+            "error": "No joints yet. define_joint (revolute/prismatic/gear) between instances, then check.",
+            "for_model": (
+                "No kinematic joints. Call define_joint on instances (driven crank, then the rest "
+                "of the loop) before asking if it moves. CadQuery will not simulate motion."
+            ),
+            "disclaimer": "Not SolidWorks Motion.",
+        }
+    sweep = sweep_mechanism(project_id, start_deg, end_deg, steps, include_frames=False)
+    gears = sweep.get("gears") or []
+    lockups = sweep.get("lockups") or []
+    collisions = sweep.get("collisions") or []
+    stats = sweep.get("stats") or {}
+    trans_min = sweep.get("transmission_min_deg")
+    gear_fail = [g for g in gears if not g.get("ok")]
+    awkward = bool(
+        (trans_min is not None and trans_min < 40.0)
+        or (stats and stats.get("grashof") is False)
+    )
+    if lockups:
+        verdict = "locks"
+    elif collisions:
+        verdict = "collides"
+    elif gear_fail:
+        verdict = "gears_wrong"
+    elif awkward:
+        verdict = "awkward"
+    else:
+        verdict = "works"
+    bits = [sweep.get("summary") or sweep.get("kind") or "mechanism"]
+    if verdict == "works":
+        bits.append("the input can travel this range without lock-up or hull clash")
+    elif verdict == "awkward":
+        if trans_min is not None and trans_min < 40:
+            bits.append(
+                f"it assembles but min transmission angle is {trans_min:.0f}° (want ≥40° for comfort)"
+            )
+        if stats and not stats.get("grashof"):
+            bits.append("not Grashof — crank cannot fully rotate")
+    elif verdict == "locks":
+        bits.append(f"cannot assemble at {lockups[0]['deg']}° — shorten a link or change the drive range")
+    elif verdict == "collides":
+        hit = collisions[0]["hits"][0]
+        bits.append(f"{hit['a']} hits {hit['b']} at {collisions[0]['deg']}° — move a pivot or thin a body")
+    elif verdict == "gears_wrong":
+        bits.append(gear_fail[0].get("verdict") or gear_fail[0].get("error") or "gears do not mesh")
+    for_model = (
+        f"Verdict: {verdict}. " + " ".join(bits) + " "
+        "This is planar kinematics + convex-hull SAT, not SolidWorks Motion and not contact FEA. "
+        "Do not claim a Motion study sign-off."
+    )
+    return {
+        **sweep,
+        "ok": verdict in {"works", "awkward"},
+        "verdict": verdict,
+        "works": verdict == "works",
+        "awkward": verdict == "awkward",
+        "for_model": for_model,
+        "comfort": {
+            "kind": sweep.get("kind"),
+            "grashof": stats.get("grashof") if stats else None,
+            "class": stats.get("class") if stats else None,
+            "transmission_min_deg": trans_min,
+            "transmission_max_deg": sweep.get("transmission_max_deg"),
+            "lockups": lockups,
+            "collisions": collisions,
+            "gears": gears,
+            "clear_deg": sweep.get("clear_deg"),
+            "slide_mm_range": sweep.get("slide_mm_range"),
+        },
+        "frames": [],
     }

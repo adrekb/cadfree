@@ -38,7 +38,7 @@ from cadfree.physics.dispatch import probe_solvers, run_solvers, solve_on_part
 from cadfree.physics.snapshot import write_si_status
 from cadfree.physics.topology import run_generate
 from cadfree.simulation.pipeline import probe as sim_probe
-from cadfree.kinematics.mechanism import list_joints, remove_joint, sweep_mechanism, upsert_joint
+from cadfree.kinematics.mechanism import check_mechanism, list_joints, remove_joint, sweep_mechanism, upsert_joint
 from cadfree.store.db import all_settings, db, init_db, set_setting
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -560,6 +560,16 @@ def create_app() -> FastAPI:
         return sweep_mechanism(
             project_id, body.start_deg, body.end_deg, body.steps, include_frames=True
         )
+
+    @app.get("/api/projects/{project_id}/mechanism")
+    def get_mechanism_check(
+        project_id: str, start_deg: float = 0.0, end_deg: float = 360.0, steps: int = 36
+    ) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        return check_mechanism(project_id, start_deg, end_deg, steps)
 
     @app.get("/api/physics/book")
     def physics_book(domain: str | None = None, q: str | None = None) -> dict[str, Any]:

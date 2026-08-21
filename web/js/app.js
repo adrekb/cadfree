@@ -214,6 +214,7 @@ async function loadStudio(id) {
         imported: activePart.kind === 'imported',
     });
     renderParts(p.assembly || {});
+    renderJoints(p.joints || []);
     renderFeasibility(p.feasibility || {});
     renderMessages(p.messages || []);
     (p.pending_surveys || []).forEach(s => renderSurvey({
@@ -251,6 +252,19 @@ function renderParts(assembly) {
         ? `<span class="muted small">${n} instances · ${assembly.unique_parts || parts.length} unique · ${bom.map(b => b.qty + '× ' + b.name).join(', ')}</span>`
         : '';
     host.innerHTML = chips + bomTxt;
+}
+
+function renderJoints(joints) {
+    const host = document.getElementById('joints-chips');
+    if (!host) return;
+    const list = joints || [];
+    if (!list.length) {
+        host.innerHTML = '<span class="muted small">No joints — agent define_joint, then Check.</span>';
+        return;
+    }
+    host.innerHTML = list.map(j =>
+        `<span class="joint-chip" title="${escHtml(j.kind)}">${escHtml(j.name || j.kind)}${j.driven ? ' · drive' : ''}</span>`
+    ).join('');
 }
 
 async function selectPart(id) {
@@ -655,22 +669,24 @@ async function loadMotion(id) {
     const pid = id || currentProjectId;
     const strip = document.getElementById('motion-strip');
     if (!pid || !strip) return;
+    strip.hidden = false;
     try {
         const data = await api('/api/projects/' + pid + '/motion?steps=24');
         if (!data.ok || !(data.frames || []).length) {
-            strip.hidden = true;
             motionFrames = [];
+            const st = document.getElementById('motion-status');
+            if (st) st.textContent = data.error || 'Joints + Play — not SolidWorks Motion.';
             return;
         }
-        strip.hidden = false;
         motionFrames = data.frames;
         const sl = document.getElementById('motion-slider');
         sl.min = 0;
         sl.max = Math.max(0, motionFrames.length - 1);
         sl.value = 0;
         document.getElementById('motion-status').textContent = data.summary || '';
+        scrubMotion(0);
     } catch (_) {
-        strip.hidden = true;
+        motionFrames = [];
     }
 }
 
@@ -681,7 +697,8 @@ function scrubMotion(i) {
     }
     const status = document.getElementById('motion-status');
     if (status && f) {
-        status.textContent = (f.locked ? 'lock-up @ ' : (f.hits && f.hits.length ? 'clash @ ' : '')) + f.deg + '°';
+        const mu = f.transmission_deg != null ? (' · μ ' + Number(f.transmission_deg).toFixed(0) + '°') : '';
+        status.textContent = (f.locked ? 'lock-up @ ' : (f.hits && f.hits.length ? 'clash @ ' : '')) + f.deg + '°' + mu;
     }
 }
 
@@ -695,6 +712,39 @@ function playMotion() {
         scrubMotion(i);
         i = (i + 1) % motionFrames.length;
     }, 90);
+}
+
+async function checkMotionNow() {
+    if (!currentProjectId) return;
+    try {
+        const result = await api('/api/projects/' + currentProjectId + '/mechanism');
+        renderMechanism(result);
+        const st = document.getElementById('motion-status');
+        if (st) st.textContent = result.for_model || result.summary || result.verdict || '';
+        await loadMotion(currentProjectId);
+    } catch (e) {
+        appendMsg('error', e.message || String(e));
+    }
+}
+
+function renderMechanism(result) {
+    const log = document.getElementById('chat-log');
+    if (!log) return;
+    const div = document.createElement('div');
+    div.className = 'msg physics';
+    const v = result.verdict || (result.ok ? 'ok' : 'no');
+    const chip = result.works ? 'ok' : (result.awkward ? 'no' : 'no');
+    const c = result.comfort || {};
+    div.innerHTML = '<div class="who">mechanism</div>' +
+        `<div class="solver-card"><span class="chip ${chip}">${escHtml(v)}</span>` +
+        `<span class="muted small">${escHtml(result.kind || '')}</span>` +
+        (c.transmission_min_deg != null ? `<div class="prov">min transmission ${escHtml(String(Number(c.transmission_min_deg).toFixed(0)))}°</div>` : '') +
+        (c.class ? `<div class="prov">${escHtml(c.class)}</div>` : '') +
+        `<p class="disclaimer">${escHtml(result.for_model || result.summary || '')}</p>` +
+        (result.disclaimer ? `<p class="disclaimer">${escHtml(result.disclaimer)}</p>` : '') +
+        '</div>';
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
 }
 
 function thinkHint(level) {
@@ -1009,10 +1059,12 @@ async function sendChatText(text) {
                     refreshViewer(currentProjectId);
                 } else if (ev.type === 'tool_result' && (ev.name === 'place_instance' || ev.name === 'upsert_part')) {
                     refreshViewer(currentProjectId);
-                } else if (ev.type === 'tool_result' && (ev.name === 'define_joint' || ev.name === 'sweep_mechanism' || ev.name === 'check_mesh')) {
+                } else if (ev.type === 'tool_result' && (ev.name === 'define_joint' || ev.name === 'sweep_mechanism' || ev.name === 'check_mesh' || ev.name === 'check_mechanism')) {
                     loadMotion(currentProjectId);
-                    if (ev.result && ev.result.summary) appendMsg('motion', ev.result.summary, 'tool');
+                    if (ev.name === 'check_mechanism' || ev.name === 'check_mesh') renderMechanism(ev.result || {});
+                    else if (ev.result && ev.result.summary) appendMsg('motion', ev.result.summary, 'tool');
                     else if (ev.result && ev.result.gears) appendMsg('mesh', JSON.stringify(ev.result.gears), 'tool');
+                    api('/api/projects/' + currentProjectId).then(p => renderJoints(p.joints || [])).catch(() => {});
                 } else if (ev.type === 'tool_result' && (ev.name === 'solve_formula' || ev.name === 'lookup_formula' || ev.name === 'run_solvers')) {
                     renderPhysics(ev.name, ev.result || {});
                     if (ev.name === 'run_solvers' && ev.result && (ev.result.results || []).some(r => r.kind === 'topology' || r.engine === 'simp')) {

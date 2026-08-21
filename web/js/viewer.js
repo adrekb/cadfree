@@ -297,6 +297,8 @@ if (!gl) {
         draws = (scene.draws || []).map((d) => ({
             part_id: d.part_id,
             instance_id: d.instance_id,
+            clash: !!d.clash,
+            locked: !!d.locked,
             matrix: new Float32Array(d.matrix && d.matrix.length === 16 ? d.matrix : IDENTITY),
         }));
         const needed = {};
@@ -385,7 +387,7 @@ if (!gl) {
             const nmat = matMul(view, d.matrix);
             gl.uniformMatrix4fv(uMVP, false, mvp);
             gl.uniformMatrix4fv(uN, false, nmat);
-            gl.uniform3fv(uColor, mesh.color);
+            gl.uniform3fv(uColor, d.clash ? [0.92, 0.32, 0.24] : (d.locked ? [0.95, 0.72, 0.28] : mesh.color));
             gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
             gl.enableVertexAttribArray(aPos);
             gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
@@ -407,6 +409,8 @@ if (!gl) {
             draws = next.map((d) => ({
                 part_id: d.part_id,
                 instance_id: d.instance_id,
+                clash: !!d.clash,
+                locked: !!d.locked,
                 matrix: new Float32Array(d.matrix && d.matrix.length === 16 ? d.matrix : IDENTITY),
             }));
         },

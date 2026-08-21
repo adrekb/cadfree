@@ -186,8 +186,8 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "sweep_mechanism",
             "Drive the input joint through an angle (or mm for a slider) and report lock-ups "
-            "plus AABB clashes. CadQuery does not do this — this is the kinematics layer. "
-            "Not contact dynamics.",
+            "plus convex-hull SAT clashes. CadQuery does not do this — this is the kinematics layer. "
+            "Not contact dynamics, not SolidWorks Motion.",
             {
                 "type": "object",
                 "properties": {
@@ -200,10 +200,27 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "check_mesh",
-            "First-order gear pitch-diameter check and interference at rest. "
-            "Needs gear joints with module_mm and teeth counts, or any joints for clash.",
+            "First-order gear pitch-diameter check plus a rest-pose / sweep clash. "
+            "Prefer check_mechanism for a full 'does this linkage work?' verdict.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             handlers["check_mesh"],
+        ),
+        Tool(
+            "check_mechanism",
+            "Does this linkage actually move? Sweeps the driven joint, reports lock-up, "
+            "convex-hull clashes, Grashof class, min transmission angle, slider travel, "
+            "and gear pitch. Returns verdict works|awkward|locks|collides|gears_wrong "
+            "and for_model for you to cite. Not SolidWorks Motion. Call after define_joint "
+            "and build_model so meshes exist.",
+            {
+                "type": "object",
+                "properties": {
+                    "start_deg": {"type": "number"},
+                    "end_deg": {"type": "number"},
+                    "steps": {"type": "integer"},
+                },
+            },
+            handlers["check_mechanism"],
         ),
         Tool(
             "lookup_formula",
