@@ -150,6 +150,25 @@
 }
 .cite-badge.body { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
 .cite-badge.vendor { color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 40%, transparent); }
+.math-card {
+  background: var(--card);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.math-card .math-head { font-size: 13px; margin-bottom: 8px; }
+.math-card .math-step { margin: 8px 0; overflow-x: auto; }
+.math-card .math-step .ttl { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.math-card .maintain { font-size: 13px; margin: 10px 0 0; color: var(--text); }
+.math-card .disclaimer { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+.math-card .prov { font-size: 11px; color: var(--muted); margin: 6px 0 0; }
+.solver-card { margin-top: 8px; }
+.solver-card .chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--border); margin-right: 6px; color: var(--muted);
+}
+.solver-card .chip.ok { color: var(--green); }
+.solver-card .chip.no { color: var(--yellow); }
 #chat-input:disabled, #chat-send:disabled { opacity: 0.55; cursor: not-allowed; }
 .think-label {
   display: flex; align-items: center; gap: 6px;

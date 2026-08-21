@@ -32,6 +32,9 @@ from cadfree.manufacturing.evaluate import evaluate
 from cadfree.manufacturing.mesh import load_mesh, metrics_from_mesh
 from cadfree.matlab.engine import find_engine
 from cadfree.paths import project_dir
+from cadfree.physics.book import list_book, lookup_formula
+from cadfree.physics.dispatch import probe_solvers, run_solvers, solve_on_part
+from cadfree.physics.snapshot import write_si_status
 from cadfree.simulation.pipeline import probe as sim_probe
 from cadfree.kinematics.mechanism import list_joints, remove_joint, sweep_mechanism, upsert_joint
 from cadfree.store.db import all_settings, db, init_db, set_setting
@@ -113,6 +116,21 @@ class MotionIn(BaseModel):
     steps: int = 24
 
 
+class FormulaSolveIn(BaseModel):
+    formula_id: str
+    values: dict[str, Any] = Field(default_factory=dict)
+    solve_for: str | None = None
+    use_part: bool = True
+    part_id: str | None = None
+
+
+class SolversIn(BaseModel):
+    solvers: list[str] = Field(default_factory=lambda: ["analytical", "fea", "fluids"])
+    values: dict[str, Any] = Field(default_factory=dict)
+    pack: str | None = None
+    part_id: str | None = None
+
+
 def create_app() -> FastAPI:
     init_db()
     app = FastAPI(title="Cadfree", version="0.1.0")
@@ -125,6 +143,7 @@ def create_app() -> FastAPI:
             "import": import_status(),
             "matlab": find_engine(),
             "simulation": sim_probe(),
+            "solvers": probe_solvers(),
             "llm": {k: (bool(v) if k == "api_key" else v) for k, v in llm_config().items()},
         }
 
@@ -464,6 +483,47 @@ def create_app() -> FastAPI:
         return sweep_mechanism(
             project_id, body.start_deg, body.end_deg, body.steps, include_frames=True
         )
+
+    @app.get("/api/physics/book")
+    def physics_book(domain: str | None = None, q: str | None = None) -> dict[str, Any]:
+        if q:
+            return lookup_formula(q, domain=domain)
+        return {"ok": True, "formulas": list_book(domain), "probe": probe_solvers()}
+
+    @app.get("/api/projects/{project_id}/si-status")
+    def get_si_status(project_id: str, part_id: str | None = None) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        try:
+            return write_si_status(project_id, part_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/api/projects/{project_id}/solvers")
+    def post_solvers(project_id: str, body: SolversIn) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        return run_solvers(
+            project_id, solvers=body.solvers, values=body.values, pack=body.pack, part_id=body.part_id
+        )
+
+    @app.post("/api/projects/{project_id}/formula")
+    def post_formula(project_id: str, body: FormulaSolveIn) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        if body.use_part:
+            return solve_on_part(
+                project_id, body.formula_id, values=body.values, solve_for=body.solve_for, part_id=body.part_id
+            )
+        from cadfree.physics.engine import solve_formula as _solve
+
+        return _solve(body.formula_id, body.values, solve_for=body.solve_for)
 
     @app.post("/api/projects/{project_id}/parts/{part_id}/activate")
     def activate_part(project_id: str, part_id: str) -> dict[str, Any]:

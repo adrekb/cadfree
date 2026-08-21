@@ -626,6 +626,74 @@ async function submitSurveyForm(event, surveyId) {
     return false;
 }
 
+function typesetLatex(tex, display) {
+    if (window.katex) {
+        try {
+            return window.katex.renderToString(tex || '', { throwOnError: false, displayMode: !!display });
+        } catch (_) { /* fall through */ }
+    }
+    const pre = document.createElement('code');
+    pre.textContent = tex || '';
+    return pre.outerHTML;
+}
+
+function renderWorksheet(ws) {
+    if (!ws) return '';
+    const steps = (ws.steps || []).map(s =>
+        `<div class="math-step"><div class="ttl">${escHtml(s.title || '')}</div>${typesetLatex(s.latex || '', true)}</div>`
+    ).join('');
+    const prov = Object.entries(ws.provenance || {}).map(([k, v]) =>
+        `<div class="prov"><code>${escHtml(k)}</code> ${escHtml(String(v))}</div>`
+    ).join('');
+    const extra = ws.ok
+        ? `<div class="math-head">${escHtml(ws.title || ws.formula_id || '')}` +
+          (ws.value != null ? ` = ${escHtml(String(ws.value))} ${escHtml(ws.unit || '')}` : '') +
+          `</div>`
+        : `<div class="math-head">${escHtml(ws.title || ws.formula_id || 'formula')} — ${escHtml(ws.error || 'needed inputs')}</div>`;
+    return `<div class="math-card">${extra}${steps}${prov}` +
+        (ws.maintain ? `<p class="maintain">${escHtml(ws.maintain)}</p>` : '') +
+        (ws.disclaimer ? `<p class="disclaimer">${escHtml(ws.disclaimer)}</p>` : '') +
+        `</div>`;
+}
+
+function renderPhysics(name, result) {
+    const log = document.getElementById('chat-log');
+    const div = document.createElement('div');
+    div.className = 'msg physics';
+    if (name === 'lookup_formula') {
+        const hits = result.formulas || [];
+        div.innerHTML = '<div class="who">formula book</div>' + (hits.map(f =>
+            `<div class="math-card"><div class="math-head">${escHtml(f.title || f.id)} · ${escHtml(f.domain || '')}</div>` +
+            typesetLatex(f.latex || '', true) +
+            `<p class="disclaimer">${escHtml(f.disclaimer || '')}</p></div>`
+        ).join('') || `<div class="muted">${escHtml(result.note || 'No formulas.')}</div>`);
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+        return;
+    }
+    if (name === 'solve_formula') {
+        div.innerHTML = '<div class="who">physics</div>' + renderWorksheet(result);
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+        return;
+    }
+    const blocks = (result.results || []).map(r => {
+        const ok = r.ok ? 'ok' : 'no';
+        const sheets = (r.worksheets || []).map(renderWorksheet).join('');
+        const hints = (r.iterate || result.iterate || []).map(h =>
+            `<div class="prov">iterate <code>${escHtml(h.param || '')}</code> ${escHtml(h.reason || h.note || '')}</div>`
+        ).join('');
+        return `<div class="solver-card"><span class="chip ${ok}">${escHtml(r.kind || r.solver || 'solver')}</span>` +
+            (r.error ? `<span class="muted small">${escHtml(r.error)}</span>` : '') +
+            sheets + hints +
+            (r.disclaimer ? `<p class="disclaimer">${escHtml(r.disclaimer)}</p>` : '') +
+            `</div>`;
+    }).join('');
+    div.innerHTML = '<div class="who">solvers</div>' + (blocks || `<div class="muted">${escHtml(result.disclaimer || '')}</div>`);
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
 function renderCitations(result) {
     const hits = (result && (result.citations || result.results)) || [];
     const log = document.getElementById('chat-log');
@@ -718,6 +786,8 @@ async function sendChatText(text) {
                     loadMotion(currentProjectId);
                     if (ev.result && ev.result.summary) appendMsg('motion', ev.result.summary, 'tool');
                     else if (ev.result && ev.result.gears) appendMsg('mesh', JSON.stringify(ev.result.gears), 'tool');
+                } else if (ev.type === 'tool_result' && (ev.name === 'solve_formula' || ev.name === 'lookup_formula' || ev.name === 'run_solvers')) {
+                    renderPhysics(ev.name, ev.result || {});
                 } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
                     renderFeasibility(ev.result || {});
                 } else if (ev.type === 'error') {

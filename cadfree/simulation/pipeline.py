@@ -30,6 +30,7 @@ from cadfree.catalog import MATERIALS
 from cadfree.manufacturing.mass import resolve_material
 from cadfree.manufacturing.strength import estimate_strength, parse_load_n
 from cadfree.manufacturing.types import MeshMetrics
+from cadfree.physics.dispatch import probe_solvers
 from cadfree.matlab.engine import find_engine, run_matlab
 
 
@@ -46,6 +47,7 @@ def probe() -> dict[str, Any]:
             "label": "Planar four-bar / open chain / gear pitch + AABB clash",
             "disclaimer": "Not CadQuery. Not SolidWorks Motion. Convex/AABB interference, not contact dynamics.",
         },
+        "solvers": probe_solvers(),
     }
 
 

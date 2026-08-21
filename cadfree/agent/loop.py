@@ -204,6 +204,65 @@ def _bind_tools(project_id: str) -> None:
             handlers["check_mesh"],
         ),
         Tool(
+            "lookup_formula",
+            "Search the SI formula book (friction, PV, wear, pipe, aero drag, beams). "
+            "Do not invent μ, C_d, or viscosity — use a book pair/fluid or ask_survey.",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "domain": {
+                        "type": "string",
+                        "enum": ["friction", "fluids", "aero", "solids", "heat", "maintenance"],
+                    },
+                },
+                "required": ["query"],
+            },
+            handlers["lookup_formula"],
+        ),
+        Tool(
+            "solve_formula",
+            "Solve one book formula in SI. Default use_part=true binds CadQuery mesh/PARAMS/spec "
+            "so numbers come from the solid, not guesses. Studio renders the LaTeX steps.",
+            {
+                "type": "object",
+                "properties": {
+                    "formula_id": {"type": "string"},
+                    "values": {"type": "object"},
+                    "solve_for": {"type": "string"},
+                    "use_part": {"type": "boolean"},
+                },
+                "required": ["formula_id"],
+            },
+            handlers["solve_formula"],
+        ),
+        Tool(
+            "run_solvers",
+            "Snapshot the built part as SI (metres, N, Pa) and send a mesh copy to packaged "
+            "solvers: analytical formula book (always), Gmsh+CalculiX FEA if installed, "
+            "fluids/aero handbook + CFD handoff if OpenFOAM/Elmer/SU2 exist. "
+            "Then iterate PARAMS from results[].iterate. Never invent FEA/CFD numbers.",
+            {
+                "type": "object",
+                "properties": {
+                    "solvers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["analytical", "fea", "fluids"],
+                        },
+                    },
+                    "values": {"type": "object"},
+                    "pack": {
+                        "type": "string",
+                        "enum": ["strength", "bushing", "aero", "pipe"],
+                    },
+                    "part_id": {"type": "string"},
+                },
+            },
+            handlers["run_solvers"],
+        ),
+        Tool(
             "search_standards",
             "Web search for ISO/ASTM/ASME/DIN/SAE/MIL-STD/NAS/IPC documents and manufacturer datasheets. "
             "Ranks standards bodies first. Cite URLs; do not invent paywalled clauses.",

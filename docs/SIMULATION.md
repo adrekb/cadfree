@@ -44,12 +44,33 @@ The open stack that actually belongs behind CadQuery:
    FreeCAD FEM, or a raw INP)
 4. von Mises / displacement; compare to yield with a safety factor
 
-Cadfree **probes** for `gmsh` and `ccx`. If they are missing, Agent mode will
-not claim a mesh solve ran. Wiring the INP writer is the next increment — the
-rung is named and detected so the UI can be honest today.
+Wiring the INP writer is in `cadfree/physics/fea.py`: the SI mesh copy
+always lands in `sim/fea/`. If `gmsh` and `ccx` are on PATH, Cadfree tet-meshes
+and runs a linear static with bbox-face BCs. If they are missing, the copy is
+still there and Agent mode will not invent von Mises.
 
-Anisotropic FDM (layer lines, infill pattern) is a further rung: voxel or
-orthotropic material cards. Do not pretend isotropic PETG is a printed part.
+## CadQuery → SI copy → solvers → iterate
+
+CadQuery will not run friction, FEA, or CFD. After `build_model`:
+
+1. Snapshot the part in SI (`sim/status.json`) — metres, newtons, pascals —
+   from the mesh, PARAMS, and spec. CadQuery millimetres are converted here.
+2. Copy `part_si.stl` (and STEP when CadQuery exported one) into `sim/fea/` and
+   `sim/fluids/`.
+3. Dispatch `run_solvers`:
+   - **analytical** — formula book (friction, PV, wear, pipe, aero, beams).
+     LaTeX steps in the studio. Coefficients come from the book or the survey,
+     not the LLM.
+   - **fea** — Gmsh + CalculiX if installed; otherwise the handoff folder only.
+   - **fluids** — handbook drag/Re from the same snapshot; OpenFOAM/Elmer/SU2
+     probed, never faked as a RANS field.
+4. `iterate` hints go back to PARAMS (`thickness_mm`, …). Rebuild, run again.
+
+## Formula book
+
+Friction, maintenance (PV, Archard, L10), fluids, aero, beams. All SI. The
+studio typesets the book equation, the substitution, and the result. This is
+not CFD and not a Motion study.
 
 ## Linkages (not CadQuery)
 

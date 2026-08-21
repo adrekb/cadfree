@@ -53,14 +53,23 @@ RUNNER = textwrap.dedent(
         if hasattr(solid, "val"):
             solid.val()
         cq.exporters.export(solid, str(stl_path), exportType="STL")
+        step_path = stl_path.with_suffix(".step")
+        try:
+            cq.exporters.export(solid, str(step_path), exportType="STEP")
+        except Exception:
+            step_path = None
     except Exception:
         meta_path.write_text(json.dumps({
             "ok": False,
-            "error": "Export failed:\n" + traceback.format_exc()[-4000:],
+            "error": "Export failed:\\n" + traceback.format_exc()[-4000:],
         }), encoding="utf-8")
         sys.exit(1)
 
-    meta_path.write_text(json.dumps({"ok": True, "error": ""}), encoding="utf-8")
+    meta_path.write_text(json.dumps({
+        "ok": True,
+        "error": "",
+        "step": str(step_path) if step_path else "",
+    }), encoding="utf-8")
     """
 )
 
@@ -106,10 +115,12 @@ def build_cadquery(source: str, workdir: Path, timeout: int = 45) -> dict[str, A
 
     mesh = load_mesh(stl_path)
     metrics = metrics_from_mesh(mesh)
+    step = workdir / "model.step"
     return {
         "ok": True,
         "error": "",
         "stl_path": str(stl_path),
+        "step_path": str(step) if step.is_file() else None,
         "metrics": metrics.to_dict(),
         "params": extract_params(source),
         "cadquery_available": True,

@@ -1,0 +1,444 @@
+"""Handbook formulas. The LLM does not invent μ, C_d, or viscosity.
+
+Every entry is SI. CadQuery millimetres are converted in snapshot.py before
+these see a number. Not CFD, not contact dynamics, not a coupon test.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+FRICTION_PAIRS: dict[str, float] = {
+    "dry_steel_steel": 0.6,
+    "greased_steel": 0.12,
+    "nylon_steel": 0.3,
+    "ptfe_steel": 0.05,
+    "acetal_steel": 0.2,
+    "rubber_dry": 0.8,
+    "wood_steel": 0.4,
+}
+
+FLUIDS: dict[str, dict[str, float]] = {
+    "air": {"rho": 1.225, "mu_visc": 1.81e-5, "label": "air 15 °C, 1 atm"},
+    "water": {"rho": 997.0, "mu_visc": 1.0e-3, "label": "water 20 °C"},
+    "oil_iso32": {"rho": 870.0, "mu_visc": 0.028, "label": "ISO VG 32 hydraulic oil, ~40 °C typical"},
+}
+
+G = 9.80665
+
+
+def _f(
+    *,
+    id: str,
+    domain: str,
+    title: str,
+    latex: str,
+    expr: str,
+    output: str,
+    unit: str,
+    variables: dict[str, dict[str, Any]],
+    disclaimer: str,
+    maintain: str = "",
+    tags: tuple[str, ...] = (),
+    source: str = "Shigley / Fox / first-order handbook",
+) -> dict[str, Any]:
+    return {
+        "id": id,
+        "domain": domain,
+        "title": title,
+        "latex": latex,
+        "expr": expr,
+        "output": output,
+        "unit": unit,
+        "variables": variables,
+        "disclaimer": disclaimer,
+        "maintain": maintain,
+        "tags": list(tags),
+        "source": source,
+    }
+
+
+def _var(latex: str, unit: str, label: str, **extra: Any) -> dict[str, Any]:
+    out = {"latex": latex, "unit": unit, "label": label}
+    out.update(extra)
+    return out
+
+
+FORMULAS: list[dict[str, Any]] = [
+    _f(
+        id="coulomb_friction",
+        domain="friction",
+        title="Coulomb sliding friction",
+        latex=r"F_f = \mu F_N",
+        expr="mu * F_N",
+        output="F_f",
+        unit="N",
+        variables={
+            "mu": _var(r"\mu", "1", "friction coefficient"),
+            "F_N": _var(r"F_N", "N", "normal load"),
+        },
+        disclaimer="Amontons–Coulomb. Not Stribeck, not EHL, not stick-slip.",
+        maintain="If dry μ is high and heat follows, grease or a bushing. Do not guess μ — use pair= from the book or a datasheet.",
+        tags=("friction", "maintain", "brake", "slide"),
+    ),
+    _f(
+        id="friction_power",
+        domain="friction",
+        title="Friction heating / power",
+        latex=r"P = F_f v",
+        expr="F_f * v",
+        output="P",
+        unit="W",
+        variables={
+            "F_f": _var(r"F_f", "N", "friction force"),
+            "v": _var(r"v", "m/s", "sliding speed"),
+        },
+        disclaimer="Instantaneous P = F v. Not a thermal-network transient.",
+        maintain="If P is more than a few watts in a small plastic bushing, it will glaze. Relube, enlarge area, or switch to rolling.",
+        tags=("friction", "heat", "maintain"),
+    ),
+    _f(
+        id="pv_bushing",
+        domain="friction",
+        title="Plain-bearing PV",
+        latex=r"p = F_N / A,\quad \mathrm{PV} = p\,v",
+        expr="(F_N / A) * v",
+        output="PV",
+        unit="Pa·m/s",
+        variables={
+            "F_N": _var(r"F_N", "N", "radial load"),
+            "A": _var(r"A", "m^2", "projected area (D × L for a journal)"),
+            "v": _var(r"v", "m/s", "surface speed"),
+        },
+        disclaimer="First-order PV. Limit is a typical catalog number, not this bushing's coupon.",
+        maintain="Stay under the material PV_limit. Grease at assembly; relube sooner as PV approaches the limit.",
+        tags=("bushing", "bearing", "maintain", "pv"),
+    ),
+    _f(
+        id="archard_wear",
+        domain="friction",
+        title="Archard wear volume",
+        latex=r"V_w = k F_N s / H",
+        expr="k_wear * F_N * s / H",
+        output="V_w",
+        unit="m^3",
+        variables={
+            "k_wear": _var(r"k", "1", "Archard wear coefficient", default=1e-5),
+            "F_N": _var(r"F_N", "N", "normal load"),
+            "s": _var(r"s", "m", "sliding distance"),
+            "H": _var(r"H", "Pa", "hardness (pressure)", default=1e8),
+        },
+        disclaimer="Archard is an order-of-magnitude wear estimate. k varies by decades.",
+        maintain="Convert V_w to a diametral loss on the journal and set an inspect-before-that interval.",
+        tags=("wear", "maintain"),
+    ),
+    _f(
+        id="capstan",
+        domain="friction",
+        title="Capstan / belt friction",
+        latex=r"T_\mathrm{hold} / T_\mathrm{load} = e^{\mu \theta}",
+        expr="exp(mu * theta)",
+        output="ratio",
+        unit="1",
+        variables={
+            "mu": _var(r"\mu", "1", "friction coefficient"),
+            "theta": _var(r"\theta", "rad", "wrap angle"),
+        },
+        disclaimer="Ideal capstan. No belt stiffness, no pulley inertia.",
+        tags=("belt", "friction"),
+    ),
+    _f(
+        id="screw_self_lock",
+        domain="friction",
+        title="Power-screw self-locking",
+        latex=r"\lambda = \arctan(l / (\pi d_m)),\quad \text{locks if }\lambda < \arctan\mu",
+        expr="(atan(lead / (pi * d_m)) < atan(mu)) * 1.0",
+        output="self_lock",
+        unit="1",
+        variables={
+            "lead": _var(r"l", "m", "lead per turn"),
+            "d_m": _var(r"d_m", "m", "mean thread diameter"),
+            "mu": _var(r"\mu", "1", "thread friction"),
+        },
+        disclaimer="Square-thread first-order. Acme/buttress need the thread-angle term.",
+        maintain="If it does not self-lock, the lift needs a brake or a non-backdriving ratio.",
+        tags=("screw", "jack", "maintain"),
+    ),
+    _f(
+        id="reynolds",
+        domain="fluids",
+        title="Reynolds number",
+        latex=r"Re = \rho v D / \mu",
+        expr="rho * v * D / mu_visc",
+        output="Re",
+        unit="1",
+        variables={
+            "rho": _var(r"\rho", "kg/m^3", "density"),
+            "v": _var(r"v", "m/s", "speed"),
+            "D": _var(r"D", "m", "characteristic length / diameter"),
+            "mu_visc": _var(r"\mu", "Pa·s", "dynamic viscosity"),
+        },
+        disclaimer="Pipe/plate first-order. Transition is not a single number for every geometry.",
+        maintain="Re < 2300 laminar in a pipe; Re > 4000 turbulent — filters and fittings see more loss.",
+        tags=("fluids", "aero", "pipe"),
+    ),
+    _f(
+        id="hagen_poiseuille",
+        domain="fluids",
+        title="Hagen–Poiseuille pipe ΔP (laminar)",
+        latex=r"\Delta p = 8 \mu L Q / (\pi r^4)",
+        expr="8 * mu_visc * L * Q / (pi * r**4)",
+        output="dp",
+        unit="Pa",
+        variables={
+            "mu_visc": _var(r"\mu", "Pa·s", "viscosity"),
+            "L": _var(r"L", "m", "length"),
+            "Q": _var(r"Q", "m^3/s", "volume flow"),
+            "r": _var(r"r", "m", "radius"),
+        },
+        disclaimer="Laminar, circular, fully developed. Invalid when Re is turbulent.",
+        tags=("fluids", "pipe"),
+    ),
+    _f(
+        id="darcy_weisbach",
+        domain="fluids",
+        title="Darcy–Weisbach head loss",
+        latex=r"h_f = f \frac{L}{D}\frac{v^2}{2g}",
+        expr="f * (L / D) * (v**2) / (2 * g)",
+        output="h_f",
+        unit="m",
+        variables={
+            "f": _var(r"f", "1", "friction factor"),
+            "L": _var(r"L", "m", "length"),
+            "D": _var(r"D", "m", "diameter"),
+            "v": _var(r"v", "m/s", "mean speed"),
+            "g": _var(r"g", "m/s^2", "gravity", default=G),
+        },
+        disclaimer="Needs a friction factor (64/Re laminar, Blasius turbulent-smooth). Not a 3D CFD field.",
+        tags=("fluids", "pipe"),
+    ),
+    _f(
+        id="orifice",
+        domain="fluids",
+        title="Orifice / discharge",
+        latex=r"Q = C_d A \sqrt{2\Delta p / \rho}",
+        expr="Cd * A * sqrt(2 * dp / rho)",
+        output="Q",
+        unit="m^3/s",
+        variables={
+            "Cd": _var(r"C_d", "1", "discharge coefficient", default=0.62),
+            "A": _var(r"A", "m^2", "orifice area"),
+            "dp": _var(r"\Delta p", "Pa", "pressure drop"),
+            "rho": _var(r"\rho", "kg/m^3", "density"),
+        },
+        disclaimer="Incompressible orifice. C_d is geometry-specific.",
+        tags=("fluids", "orifice"),
+    ),
+    _f(
+        id="dynamic_pressure",
+        domain="aero",
+        title="Dynamic pressure",
+        latex=r"q = \tfrac{1}{2} \rho v^2",
+        expr="0.5 * rho * v**2",
+        output="q",
+        unit="Pa",
+        variables={
+            "rho": _var(r"\rho", "kg/m^3", "density"),
+            "v": _var(r"v", "m/s", "speed"),
+        },
+        disclaimer="Incompressible q. Say so if Mach is not << 0.3.",
+        tags=("aero", "fluids"),
+    ),
+    _f(
+        id="drag_force",
+        domain="aero",
+        title="Drag force",
+        latex=r"F_D = \tfrac{1}{2} \rho v^2 C_D A",
+        expr="0.5 * rho * v**2 * Cd * A",
+        output="F_D",
+        unit="N",
+        variables={
+            "rho": _var(r"\rho", "kg/m^3", "density"),
+            "v": _var(r"v", "m/s", "speed"),
+            "Cd": _var(r"C_D", "1", "drag coefficient", default=1.0),
+            "A": _var(r"A", "m^2", "projected area"),
+        },
+        disclaimer="Single C_D, one projected area. Not a RANS/LES field, not stall.",
+        tags=("aero", "fluids", "drag"),
+    ),
+    _f(
+        id="aero_power",
+        domain="aero",
+        title="Propulsive power against drag",
+        latex=r"P = F_D v",
+        expr="F_D * v",
+        output="P",
+        unit="W",
+        variables={
+            "F_D": _var(r"F_D", "N", "drag"),
+            "v": _var(r"v", "m/s", "speed"),
+        },
+        disclaimer="Steady P = F v. Not a propeller map.",
+        tags=("aero", "power"),
+    ),
+    _f(
+        id="cantilever_stress",
+        domain="solids",
+        title="Cantilever bending stress",
+        latex=r"\sigma = \frac{6 F_N L}{b t^2}",
+        expr="6 * F_N * L / (b * t**2)",
+        output="sigma",
+        unit="Pa",
+        variables={
+            "F_N": _var(r"F_N", "N", "tip load"),
+            "L": _var(r"L", "m", "span"),
+            "b": _var(r"b", "m", "width"),
+            "t": _var(r"t", "m", "thickness"),
+        },
+        disclaimer="Rectangle cantilever, M c / I. Not mesh FEA. Infill/knockdowns live in the first-order rung.",
+        tags=("beam", "strength"),
+    ),
+    _f(
+        id="cantilever_deflection",
+        domain="solids",
+        title="Cantilever tip deflection",
+        latex=r"\delta = \frac{F_N L^3}{3 E I},\quad I = b t^3 / 12",
+        expr="F_N * L**3 / (3 * E * (b * t**3 / 12))",
+        output="delta",
+        unit="m",
+        variables={
+            "F_N": _var(r"F_N", "N", "tip load"),
+            "L": _var(r"L", "m", "span"),
+            "E": _var(r"E", "Pa", "modulus"),
+            "b": _var(r"b", "m", "width"),
+            "t": _var(r"t", "m", "thickness"),
+        },
+        disclaimer="Euler–Bernoulli. Not shear deflection, not FDM anisotropy.",
+        tags=("beam", "stiffness"),
+    ),
+    _f(
+        id="shaft_torsion",
+        domain="solids",
+        title="Round-shaft torsion",
+        latex=r"\tau = T r / J,\quad J = \pi d^4 / 32",
+        expr="T * (D / 2) / (pi * D**4 / 32)",
+        output="tau",
+        unit="Pa",
+        variables={
+            "T": _var(r"T", "N·m", "torque"),
+            "D": _var(r"D", "m", "diameter"),
+        },
+        disclaimer="Solid circular shaft. Keyways and hollow sections are not this formula.",
+        tags=("shaft", "torsion"),
+    ),
+    _f(
+        id="bearing_L10",
+        domain="maintenance",
+        title="Rolling-bearing L10 life",
+        latex=r"L_{10} = (C / P)^p \times 10^6 \text{ rev}",
+        expr="(C / P)**p * 1e6",
+        output="L10_rev",
+        unit="rev",
+        variables={
+            "C": _var(r"C", "N", "basic dynamic load rating"),
+            "P": _var(r"P", "N", "equivalent load"),
+            "p": _var(r"p", "1", "3 ball / 10/3 roller", default=3),
+        },
+        disclaimer="ISO 281 sketch. No contamination, lubrication, or temperature factors.",
+        maintain="Hours = L10_rev / (60 n_rpm). Replace on that order, not 'when it sounds bad'.",
+        tags=("bearing", "maintain"),
+    ),
+    _f(
+        id="conduction",
+        domain="heat",
+        title="1-D conduction",
+        latex=r"\dot{Q} = k A \Delta T / L",
+        expr="k * A * dT / L",
+        output="Qdot",
+        unit="W",
+        variables={
+            "k": _var(r"k", "W/(m·K)", "conductivity"),
+            "A": _var(r"A", "m^2", "area"),
+            "dT": _var(r"\Delta T", "K", "temperature drop"),
+            "L": _var(r"L", "m", "thickness"),
+        },
+        disclaimer="Plane wall, steady. Not a 3D thermal FEA.",
+        tags=("heat",),
+    ),
+]
+
+BY_ID = {f["id"]: f for f in FORMULAS}
+
+PACKS: dict[str, dict[str, Any]] = {
+    "strength": {
+        "id": "strength",
+        "title": "Will it hold (handbook cantilever from the SI solid)",
+        "formulas": ["cantilever_stress", "cantilever_deflection"],
+        "solvers": ["analytical", "fea"],
+    },
+    "bushing": {
+        "id": "bushing",
+        "title": "Plain bearing — friction, PV, wear",
+        "formulas": ["coulomb_friction", "friction_power", "pv_bushing", "archard_wear"],
+        "solvers": ["analytical"],
+    },
+    "aero": {
+        "id": "aero",
+        "title": "Drag / dynamic pressure from projected area",
+        "formulas": ["reynolds", "dynamic_pressure", "drag_force", "aero_power"],
+        "solvers": ["analytical", "fluids"],
+    },
+    "pipe": {
+        "id": "pipe",
+        "title": "Internal flow — Re then laminar ΔP or Darcy",
+        "formulas": ["reynolds", "hagen_poiseuille", "darcy_weisbach"],
+        "solvers": ["analytical", "fluids"],
+    },
+}
+
+
+def list_book(domain: str | None = None) -> list[dict[str, Any]]:
+    rows = FORMULAS
+    if domain:
+        want = domain.lower().strip()
+        rows = [f for f in rows if f["domain"] == want or want in f["tags"]]
+    return [
+        {
+            "id": f["id"],
+            "domain": f["domain"],
+            "title": f["title"],
+            "latex": f["latex"],
+            "unit": f["unit"],
+            "tags": f["tags"],
+            "disclaimer": f["disclaimer"],
+        }
+        for f in rows
+    ]
+
+
+def lookup_formula(query: str, domain: str | None = None) -> dict[str, Any]:
+    q = (query or "").lower().strip()
+    tokens = [t for t in q.replace(",", " ").split() if t]
+    scored: list[tuple[int, dict[str, Any]]] = []
+    for f in FORMULAS:
+        if domain and f["domain"] != domain.lower() and domain.lower() not in f["tags"]:
+            continue
+        hay = " ".join([f["id"], f["title"], f["domain"], *f["tags"], f.get("maintain") or ""]).lower()
+        score = sum(3 if tok in f["id"] else 1 for tok in tokens if tok in hay)
+        if f["id"] == q.replace(" ", "_"):
+            score += 20
+        if score:
+            scored.append((score, f))
+    scored.sort(key=lambda x: -x[0])
+    hits = [h for _, h in scored[:8]]
+    if not hits and not tokens:
+        hits = FORMULAS[:8]
+    return {
+        "ok": True,
+        "query": query,
+        "formulas": hits,
+        "packs": list(PACKS.values()),
+        "friction_pairs": FRICTION_PAIRS,
+        "fluids": {k: v["label"] for k, v in FLUIDS.items()},
+        "note": "Use these equations. Do not invent coefficients. solve_formula / run_solvers do the arithmetic.",
+    }

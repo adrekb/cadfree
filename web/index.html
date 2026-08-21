@@ -276,11 +276,15 @@
       <p>Fusion, SolidWorks, FreeCAD, Onshape, Inventor, Blender: use <b>Import CAD</b> (or drop the file in chat). <b>STEP</b> is the right assembly export — Cadfree splits solids and keeps world coordinates in each mesh. STL / 3MF / OBJ / PLY are single bodies (or a zip of them). Native <code>.sldprt</code> / <code>.f3d</code> / <code>.ipt</code> are not readable; export STEP or STL from that program. STEP needs CadQuery (<code>pip install cadquery</code>). Imported parts have no PARAMS — edit them there, re-import here.</p>
       <h3>Linkages — does it move?</h3>
       <p>CadQuery (OCCT) builds solids. It will not tell you if a four-bar locks or if two gears mesh. Cadfree adds joints on instances: revolute, prismatic, gear. A ground–crank–coupler–rocker loop is solved as a planar four-bar (Grashof + circle intersection). <code>sweep_mechanism</code> drives the input and reports lock-up plus bounding-box clashes of the posed meshes. Gear check is pitch diameters (module × teeth), not a tooth-profile contact sim. Not SolidWorks Motion.</p>
+      <h3>Physics — CadQuery writes the solid, solvers get a copy</h3>
+      <p>CadQuery will not run friction, FEA, or CFD. After a rebuild, Cadfree snapshots the part in <b>SI</b> (metres, newtons, pascals) and copies the mesh into <code>sim/</code>. <code>run_solvers</code> sends that copy to whatever is packaged: the formula book (always — LaTeX in chat), Gmsh+CalculiX if installed, handbook aero/pipe plus a CFD handoff folder if OpenFOAM/Elmer/SU2 exist. Results come back with <code>iterate</code> hints so the agent can change PARAMS, rebuild, and run again. Missing tools are named in one sentence. Not Ansys, not a wind tunnel, not a PE stamp.</p>
     </div>
   </section>
 </main>
 </div>
 
+<link rel="stylesheet" href="/vendor/katex/katex.min.css">
+<script src="/vendor/katex/katex.min.js"></script>
 <script src="/vendor/monaco.js"></script>
 <script src="/js/app.js"></script>
 <script type="module" src="/js/viewer.js"></script>

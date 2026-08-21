@@ -34,6 +34,9 @@ from cadfree.kinematics.mechanism import (
     sweep_mechanism,
     upsert_joint,
 )
+from cadfree.physics.book import lookup_formula
+from cadfree.physics.dispatch import run_solvers, solve_on_part
+from cadfree.physics.engine import solve_formula
 from cadfree.store.db import db
 
 
@@ -106,6 +109,16 @@ def _save_build(project_id: str, built: dict[str, Any], feasibility: dict[str, A
         )
 
 
+def _last_solvers(project_id: str) -> dict[str, Any] | None:
+    path = project_dir(project_id) / "sim" / "last.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
 def make_handlers(project_id: str) -> dict[str, Any]:
     def get_workshop() -> dict[str, Any]:
         with db() as conn:
@@ -132,6 +145,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "assembly": snap,
             "active_part_id": snap.get("active_part_id"),
             "joints": list_joints(project_id),
+            "last_solvers": _last_solvers(project_id),
         }
 
     def write_cadquery(source: str, part_id: str | None = None) -> dict[str, Any]:
@@ -305,6 +319,27 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         rest = sweep_mechanism(project_id, 0, 0, 2, include_frames=False)
         return {"ok": True, "gears": gears, "at_rest": rest}
 
+    def lookup_f(query: str, domain: str = "") -> dict[str, Any]:
+        return lookup_formula(query, domain=domain or None)
+
+    def solve_f(
+        formula_id: str,
+        values: dict[str, Any] | None = None,
+        solve_for: str | None = None,
+        use_part: bool = True,
+    ) -> dict[str, Any]:
+        if use_part:
+            return solve_on_part(project_id, formula_id, values=values, solve_for=solve_for)
+        return solve_formula(formula_id, values or {}, solve_for=solve_for)
+
+    def solvers(
+        solvers: list[str] | None = None,
+        values: dict[str, Any] | None = None,
+        pack: str | None = None,
+        part_id: str | None = None,
+    ) -> dict[str, Any]:
+        return run_solvers(project_id, solvers=solvers, values=values, pack=pack, part_id=part_id)
+
     def upsert(name: str, source: str = "", part_id: str | None = None, kind: str = "part", material_id: str | None = None) -> dict[str, Any]:
         try:
             part = upsert_part(
@@ -360,4 +395,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "remove_joint": drop_joint,
         "sweep_mechanism": sweep,
         "check_mesh": mesh_check,
+        "lookup_formula": lookup_f,
+        "solve_formula": solve_f,
+        "run_solvers": solvers,
     }
