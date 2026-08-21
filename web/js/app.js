@@ -8,6 +8,8 @@ let surveyPending = false;
 let agentStreaming = false;
 let pendingAttachments = [];
 let currentVision = true;
+let motionFrames = [];
+let motionTimer = null;
 
 function escHtml(str) {
     const d = document.createElement('div');
@@ -209,6 +211,7 @@ async function loadStudio(id) {
     }));
     document.getElementById('stl-download').href = '/api/projects/' + id + '/stl';
     refreshViewer(id);
+    loadMotion(id);
 }
 
 function renderParts(assembly) {
@@ -419,6 +422,52 @@ function refreshViewer(id) {
         setTimeout(tryLoad, 50);
     };
     tryLoad();
+}
+
+async function loadMotion(id) {
+    const pid = id || currentProjectId;
+    const strip = document.getElementById('motion-strip');
+    if (!pid || !strip) return;
+    try {
+        const data = await api('/api/projects/' + pid + '/motion?steps=24');
+        if (!data.ok || !(data.frames || []).length) {
+            strip.hidden = true;
+            motionFrames = [];
+            return;
+        }
+        strip.hidden = false;
+        motionFrames = data.frames;
+        const sl = document.getElementById('motion-slider');
+        sl.min = 0;
+        sl.max = Math.max(0, motionFrames.length - 1);
+        sl.value = 0;
+        document.getElementById('motion-status').textContent = data.summary || '';
+    } catch (_) {
+        strip.hidden = true;
+    }
+}
+
+function scrubMotion(i) {
+    const f = motionFrames[Number(i)];
+    if (f && window.cadfreeViewer && window.cadfreeViewer.applyDraws) {
+        window.cadfreeViewer.applyDraws(f.draws);
+    }
+    const status = document.getElementById('motion-status');
+    if (status && f) {
+        status.textContent = (f.locked ? 'lock-up @ ' : (f.hits && f.hits.length ? 'clash @ ' : '')) + f.deg + '°';
+    }
+}
+
+function playMotion() {
+    if (!motionFrames.length) return;
+    let i = 0;
+    clearInterval(motionTimer);
+    motionTimer = setInterval(() => {
+        const sl = document.getElementById('motion-slider');
+        if (sl) sl.value = i;
+        scrubMotion(i);
+        i = (i + 1) % motionFrames.length;
+    }, 90);
 }
 
 function thinkHint(level) {
@@ -665,6 +714,10 @@ async function sendChatText(text) {
                     refreshViewer(currentProjectId);
                 } else if (ev.type === 'tool_result' && (ev.name === 'place_instance' || ev.name === 'upsert_part')) {
                     refreshViewer(currentProjectId);
+                } else if (ev.type === 'tool_result' && (ev.name === 'define_joint' || ev.name === 'sweep_mechanism' || ev.name === 'check_mesh')) {
+                    loadMotion(currentProjectId);
+                    if (ev.result && ev.result.summary) appendMsg('motion', ev.result.summary, 'tool');
+                    else if (ev.result && ev.result.gears) appendMsg('mesh', JSON.stringify(ev.result.gears), 'tool');
                 } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
                     renderFeasibility(ev.result || {});
                 } else if (ev.type === 'error') {

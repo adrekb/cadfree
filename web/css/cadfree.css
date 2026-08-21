@@ -58,6 +58,12 @@
   display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 12px;
   border-bottom: 1px solid var(--border); background: var(--card);
 }
+.motion-strip {
+  display: flex; gap: 10px; flex-wrap: wrap; padding: 6px 12px;
+  border-bottom: 1px solid var(--border); background: var(--card);
+  align-items: center;
+}
+.motion-strip input[type=range] { width: 180px; }
 .parts-strip {
   display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px;
   border-bottom: 1px solid var(--border); background: var(--bg2);

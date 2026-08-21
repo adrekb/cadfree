@@ -204,6 +204,7 @@ if (!gl) {
         const parts = scene.scene_parts || scene.parts || [];
         draws = (scene.draws || []).map((d) => ({
             part_id: d.part_id,
+            instance_id: d.instance_id,
             matrix: new Float32Array(d.matrix && d.matrix.length === 16 ? d.matrix : IDENTITY),
         }));
         const needed = {};
@@ -258,5 +259,12 @@ if (!gl) {
         requestAnimationFrame(tick);
     }
     tick();
-    window.cadfreeViewer = { load, loadScene };
+    window.cadfreeViewer = { load, loadScene, applyDraws: function (next) {
+        if (!next || !next.length) return;
+        draws = next.map((d) => ({
+            part_id: d.part_id,
+            instance_id: d.instance_id,
+            matrix: new Float32Array(d.matrix && d.matrix.length === 16 ? d.matrix : IDENTITY),
+        }));
+    } };
 }

@@ -112,6 +112,21 @@ def init_db() -> None:
                 FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY(part_id) REFERENCES parts(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS joints (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'revolute',
+                instance_a TEXT NOT NULL DEFAULT '',
+                instance_b TEXT NOT NULL,
+                origin TEXT NOT NULL DEFAULT '{}',
+                axis TEXT NOT NULL DEFAULT '{}',
+                limits TEXT NOT NULL DEFAULT '{}',
+                ratio REAL NOT NULL DEFAULT -1,
+                driven INTEGER NOT NULL DEFAULT 0,
+                params TEXT NOT NULL DEFAULT '{}',
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
             """
         )
 

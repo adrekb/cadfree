@@ -27,6 +27,13 @@ from cadfree.matlab.engine import find_engine, run_matlab
 from cadfree.paths import project_dir
 from cadfree.search.standards import read_url, search_standards
 from cadfree.simulation.pipeline import probe as sim_probe, simulate
+from cadfree.kinematics.mechanism import (
+    check_gears,
+    list_joints,
+    remove_joint,
+    sweep_mechanism,
+    upsert_joint,
+)
 from cadfree.store.db import db
 
 
@@ -124,6 +131,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "pending_surveys": list_pending(project_id),
             "assembly": snap,
             "active_part_id": snap.get("active_part_id"),
+            "joints": list_joints(project_id),
         }
 
     def write_cadquery(source: str, part_id: str | None = None) -> dict[str, Any]:
@@ -246,7 +254,56 @@ def make_handlers(project_id: str) -> dict[str, Any]:
     def list_assy() -> dict[str, Any]:
         p = _row(project_id)
         ensure_default_part(project_id, p.get("cadquery_source") or "")
-        return assembly_snapshot(project_id)
+        snap = assembly_snapshot(project_id)
+        snap["joints"] = list_joints(project_id)
+        return snap
+
+    def define_joint(
+        name: str,
+        kind: str = "revolute",
+        instance_a: str = "",
+        instance_b: str = "",
+        origin: dict[str, Any] | None = None,
+        axis: Any = "z",
+        driven: bool = False,
+        ratio: float | None = None,
+        limits: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        joint_id: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            joint = upsert_joint(
+                project_id,
+                name=name,
+                kind=kind,
+                instance_a=instance_a,
+                instance_b=instance_b,
+                origin=origin,
+                axis=axis,
+                driven=driven,
+                ratio=ratio,
+                limits=limits,
+                params=params,
+                joint_id=joint_id,
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "joint": joint, "joints": list_joints(project_id)}
+
+    def drop_joint(joint_id: str) -> dict[str, Any]:
+        return {"ok": remove_joint(project_id, joint_id)}
+
+    def sweep(
+        start_deg: float = 0.0,
+        end_deg: float = 360.0,
+        steps: int = 24,
+    ) -> dict[str, Any]:
+        return sweep_mechanism(project_id, start_deg, end_deg, steps, include_frames=False)
+
+    def mesh_check() -> dict[str, Any]:
+        gears = check_gears(project_id)
+        rest = sweep_mechanism(project_id, 0, 0, 2, include_frames=False)
+        return {"ok": True, "gears": gears, "at_rest": rest}
 
     def upsert(name: str, source: str = "", part_id: str | None = None, kind: str = "part", material_id: str | None = None) -> dict[str, Any]:
         try:
@@ -299,4 +356,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "place_instance": place,
         "remove_instance": drop_instance,
         "set_active_part": activate_part,
+        "define_joint": define_joint,
+        "remove_joint": drop_joint,
+        "sweep_mechanism": sweep,
+        "check_mesh": mesh_check,
     }

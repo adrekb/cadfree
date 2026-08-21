@@ -125,6 +125,12 @@
         <div id="view-canvas"><canvas id="cad-canvas"></canvas></div>
         <div id="view-code-wrap">
           <div class="parts-strip" id="parts-strip"></div>
+          <div class="motion-strip" id="motion-strip" hidden>
+            <span class="muted small">Motion</span>
+            <input type="range" id="motion-slider" min="0" max="24" value="0" oninput="scrubMotion(this.value)">
+            <button class="btn btn-ghost" type="button" onclick="playMotion()">Play</button>
+            <span class="muted small" id="motion-status"></span>
+          </div>
           <div class="params-strip" id="params-strip"></div>
           <div id="code-editor-host" class="monaco-host"></div>
         </div>
@@ -268,6 +274,8 @@
       <p>Shop-scale, not a car: unique parts (up to 32 solids) tessellated once, then linear / grid / circular / mirror instances (cap 400). Nested <code>parent_id</code> multiplies children. Fasteners are BOM lines. STL download is the active unique part.</p>
       <h3>Import from other programs</h3>
       <p>Fusion, SolidWorks, FreeCAD, Onshape, Inventor, Blender: use <b>Import CAD</b> (or drop the file in chat). <b>STEP</b> is the right assembly export — Cadfree splits solids and keeps world coordinates in each mesh. STL / 3MF / OBJ / PLY are single bodies (or a zip of them). Native <code>.sldprt</code> / <code>.f3d</code> / <code>.ipt</code> are not readable; export STEP or STL from that program. STEP needs CadQuery (<code>pip install cadquery</code>). Imported parts have no PARAMS — edit them there, re-import here.</p>
+      <h3>Linkages — does it move?</h3>
+      <p>CadQuery (OCCT) builds solids. It will not tell you if a four-bar locks or if two gears mesh. Cadfree adds joints on instances: revolute, prismatic, gear. A ground–crank–coupler–rocker loop is solved as a planar four-bar (Grashof + circle intersection). <code>sweep_mechanism</code> drives the input and reports lock-up plus bounding-box clashes of the posed meshes. Gear check is pitch diameters (module × teeth), not a tooth-profile contact sim. Not SolidWorks Motion.</p>
     </div>
   </section>
 </main>

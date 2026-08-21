@@ -33,6 +33,7 @@ from cadfree.manufacturing.mesh import load_mesh, metrics_from_mesh
 from cadfree.matlab.engine import find_engine
 from cadfree.paths import project_dir
 from cadfree.simulation.pipeline import probe as sim_probe
+from cadfree.kinematics.mechanism import list_joints, remove_joint, sweep_mechanism, upsert_joint
 from cadfree.store.db import all_settings, db, init_db, set_setting
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -90,6 +91,26 @@ class ChatIn(BaseModel):
 
 class SurveyAnswersIn(BaseModel):
     answers: dict[str, Any]
+
+
+class JointIn(BaseModel):
+    name: str
+    kind: str = "revolute"
+    instance_a: str = ""
+    instance_b: str
+    origin: dict[str, Any] = Field(default_factory=dict)
+    axis: Any = "z"
+    driven: bool = False
+    ratio: float | None = None
+    limits: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
+    joint_id: str | None = None
+
+
+class MotionIn(BaseModel):
+    start_deg: float = 0.0
+    end_deg: float = 360.0
+    steps: int = 24
 
 
 def create_app() -> FastAPI:
@@ -246,6 +267,7 @@ def create_app() -> FastAPI:
         item["pending_surveys"] = list_pending(project_id)
         item["assembly"] = snap
         item["active_part_id"] = snap.get("active_part_id")
+        item["joints"] = list_joints(project_id)
         item["vision_attachments"] = list_attachments(project_id)
         return item
 
@@ -385,6 +407,63 @@ def create_app() -> FastAPI:
         if not row:
             raise HTTPException(404, "project not found")
         return assembly_snapshot(project_id)
+
+    @app.get("/api/projects/{project_id}/joints")
+    def get_joints(project_id: str) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        return {"joints": list_joints(project_id)}
+
+    @app.post("/api/projects/{project_id}/joints")
+    def post_joint(project_id: str, body: JointIn) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        try:
+            joint = upsert_joint(
+                project_id,
+                name=body.name,
+                kind=body.kind,
+                instance_a=body.instance_a,
+                instance_b=body.instance_b,
+                origin=body.origin,
+                axis=body.axis,
+                driven=body.driven,
+                ratio=body.ratio,
+                limits=body.limits,
+                params=body.params,
+                joint_id=body.joint_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"ok": True, "joint": joint, "joints": list_joints(project_id)}
+
+    @app.delete("/api/projects/{project_id}/joints/{joint_id}")
+    def delete_joint(project_id: str, joint_id: str) -> dict[str, Any]:
+        return {"ok": remove_joint(project_id, joint_id)}
+
+    @app.get("/api/projects/{project_id}/motion")
+    def get_motion(
+        project_id: str, start_deg: float = 0.0, end_deg: float = 360.0, steps: int = 24
+    ) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        return sweep_mechanism(project_id, start_deg, end_deg, steps, include_frames=True)
+
+    @app.post("/api/projects/{project_id}/motion")
+    def post_motion(project_id: str, body: MotionIn) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        return sweep_mechanism(
+            project_id, body.start_deg, body.end_deg, body.steps, include_frames=True
+        )
 
     @app.post("/api/projects/{project_id}/parts/{part_id}/activate")
     def activate_part(project_id: str, part_id: str) -> dict[str, Any]:

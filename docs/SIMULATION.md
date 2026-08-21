@@ -51,6 +51,14 @@ rung is named and detected so the UI can be honest today.
 Anisotropic FDM (layer lines, infill pattern) is a further rung: voxel or
 orthotropic material cards. Do not pretend isotropic PETG is a printed part.
 
+## Linkages (not CadQuery)
+
+OCCT will not tell you if a four-bar locks. Cadfree adds joints on assembly
+instances and a **planar four-bar** solver (Grashof + two-circle intersection),
+open revolute/prismatic chains, and a spur-gear **pitch-diameter** check.
+Sweeping the input reports lock-up and AABB clashes of posed meshes. Pins that
+share a joint are ignored. This is not contact dynamics and not a Motion study.
+
 ## What we will not do
 
 - Call a bounding-box check "FEA"

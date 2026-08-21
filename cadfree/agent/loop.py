@@ -22,6 +22,8 @@ PLAN_BLOCKED = {
     "upsert_part",
     "place_instance",
     "remove_instance",
+    "define_joint",
+    "remove_joint",
 }
 
 
@@ -140,6 +142,66 @@ def _bind_tools(project_id: str) -> None:
                 "required": ["part_id"],
             },
             handlers["set_active_part"],
+        ),
+        Tool(
+            "define_joint",
+            "Add a kinematic joint between instances. kind: revolute | prismatic | gear | fixed. "
+            "instance_a is parent or empty for ground; instance_b is the moving child. "
+            "origin {x,y,z} mm is the pin (world). axis x|y|z. driven=true on the input crank. "
+            "Four revolutes ground-crank-coupler-rocker-ground is a four-bar. "
+            "Gear needs params {module_mm, teeth_a, teeth_b} and ratio.",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["revolute", "prismatic", "gear", "fixed"]},
+                    "instance_a": {"type": "string"},
+                    "instance_b": {"type": "string"},
+                    "origin": {"type": "object"},
+                    "axis": {"type": "string"},
+                    "driven": {"type": "boolean"},
+                    "ratio": {"type": "number"},
+                    "limits": {"type": "object"},
+                    "params": {"type": "object"},
+                    "joint_id": {"type": "string"},
+                },
+                "required": ["name", "instance_b"],
+            },
+            handlers["define_joint"],
+            mutating=True,
+        ),
+        Tool(
+            "remove_joint",
+            "Delete a kinematic joint.",
+            {
+                "type": "object",
+                "properties": {"joint_id": {"type": "string"}},
+                "required": ["joint_id"],
+            },
+            handlers["remove_joint"],
+            mutating=True,
+        ),
+        Tool(
+            "sweep_mechanism",
+            "Drive the input joint through an angle (or mm for a slider) and report lock-ups "
+            "plus AABB clashes. CadQuery does not do this — this is the kinematics layer. "
+            "Not contact dynamics.",
+            {
+                "type": "object",
+                "properties": {
+                    "start_deg": {"type": "number"},
+                    "end_deg": {"type": "number"},
+                    "steps": {"type": "integer"},
+                },
+            },
+            handlers["sweep_mechanism"],
+        ),
+        Tool(
+            "check_mesh",
+            "First-order gear pitch-diameter check and interference at rest. "
+            "Needs gear joints with module_mm and teeth counts, or any joints for clash.",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            handlers["check_mesh"],
         ),
         Tool(
             "search_standards",

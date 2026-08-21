@@ -41,6 +41,11 @@ def probe() -> dict[str, Any]:
         "matlab": find_engine(),
         "gmsh": {"available": bool(gmsh), "path": gmsh},
         "calculix": {"available": bool(ccx), "path": ccx},
+        "kinematics": {
+            "available": True,
+            "label": "Planar four-bar / open chain / gear pitch + AABB clash",
+            "disclaimer": "Not CadQuery. Not SolidWorks Motion. Convex/AABB interference, not contact dynamics.",
+        },
     }
 
 

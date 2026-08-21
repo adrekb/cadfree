@@ -36,6 +36,12 @@ Rules:
   export STEP (assemblies) or STL (single body). Imported parts are
   kind=imported meshes; PARAMS do not apply; place them, do not rewrite as
   CadQuery unless asked.
+- LINKAGES / MESH: CadQuery will not simulate motion. Use `define_joint`
+  (revolute / prismatic / gear) then `sweep_mechanism` to ask “if I turn this
+  crank, does the rocker move, does it lock, do bodies clash?” Four revolutes
+  on ground-crank-coupler-rocker is a planar four-bar (Grashof + circle
+  intersection). `check_mesh` is a spur-gear pitch-diameter check. Collision
+  is AABB of posed meshes, not a Motion study.
 - After every geometry change, call `build_model` (optional part_id) for each
   unique solid you changed, then `check_feasibility`.
 - If the user attached a drawing or photo, READ IT. Extract dimensions,
