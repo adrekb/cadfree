@@ -74,28 +74,46 @@ def _append_ccx(
     resolved = resolve_bcs(status, nodes, spec=spec)
     mat = status.get("material") or {}
     load = float((status.get("load") or {}).get("F_N") or 0.0)
+    fea = status.get("_fea") or {}
+    centrif = bool(fea.get("centrif"))
+    omega = float(fea.get("omega") or 0.0)
+    modal = bool(fea.get("modal") or fea.get("frequency"))
+    try:
+        n_modes = max(1, min(int(fea.get("n_modes") or 8), 20))
+    except (TypeError, ValueError):
+        n_modes = 8
     fix = resolved.get("fix_nodes") or ([nodes[0][0]] if nodes else [1])
     pull = resolved.get("load_nodes") or ([nodes[-1][0]] if nodes else [1])
     direction = resolved.get("direction") or [1.0, 0.0, 0.0]
-    mag = float(load) / max(len(pull), 1)
+    mag = float(load) / max(len(pull), 1) if pull else 0.0
     e_pa = float(mat.get("E") or 2.1e9)
     nu = float(mat.get("nu") or 0.38)
+    rho = float(mat.get("rho") or 1200.0)
     lines = [
         "",
         "*MATERIAL, NAME=PART",
         "*ELASTIC",
         f"{e_pa:.6g}, {nu:.4g}",
+    ]
+    if centrif or modal:
+        lines += ["*DENSITY", f"{rho:.6g},"]
+    lines += [
         "*SOLID SECTION, ELSET=Eall, MATERIAL=PART",
         "*BOUNDARY",
     ]
     for nid in fix:
         lines.append(f"{nid}, 1, 3, 0.0")
-    lines += ["*STEP", "*STATIC", "*CLOAD"]
-    for nid in pull:
-        for dof, comp in enumerate(direction, start=1):
-            if abs(float(comp)) < 1e-12:
-                continue
-            lines.append(f"{nid}, {dof}, {mag * float(comp):.6g}")
+    lines += ["*STEP", "*STATIC"]
+    if centrif and omega:
+        w2 = omega * omega
+        lines += ["*DLOAD", f"Eall, CENTRIF, {w2:.6g}, 0,0,0, 0,0,1"]
+    if (not centrif or load) and pull:
+        lines += ["*CLOAD"]
+        for nid in pull:
+            for dof, comp in enumerate(direction, start=1):
+                if abs(float(comp)) < 1e-12:
+                    continue
+                lines.append(f"{nid}, {dof}, {mag * float(comp):.6g}")
     lines += [
         "*NODE FILE",
         "U",
@@ -106,8 +124,17 @@ def _append_ccx(
         "*NODE PRINT, NSET=Nall",
         "U",
         "*END STEP",
-        "",
     ]
+    if modal:
+        lines += [
+            "*STEP",
+            "*FREQUENCY",
+            str(n_modes),
+            "*NODE FILE",
+            "U",
+            "*END STEP",
+        ]
+    lines.append("")
     with inp.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
     return resolved
@@ -176,6 +203,50 @@ def _parse_stress(dat: Path) -> dict[str, float]:
             ux, uy, uz = nums[-3:]
             max_u = max(max_u, math.sqrt(ux * ux + uy * uy + uz * uz))
     return {"von_mises_max": max_vm, "u_max": max_u}
+
+
+def _parse_modes(dat: Path) -> list[dict[str, float]]:
+    """Eigenvalues from a CalculiX *FREQUENCY .dat, if present."""
+    modes: list[dict[str, float]] = []
+    if not dat.is_file():
+        return modes
+    in_eigs = False
+    for raw in dat.read_text(encoding="utf-8", errors="ignore").splitlines():
+        low = raw.lower()
+        if "eigenvalue" in low or "eigen value" in low:
+            in_eigs = True
+            continue
+        if not in_eigs:
+            continue
+        parts = raw.split()
+        nums: list[float] = []
+        for p in parts:
+            try:
+                nums.append(float(p))
+            except ValueError:
+                continue
+        if len(nums) >= 2:
+            n = int(nums[0]) if nums[0] == int(nums[0]) else len(modes) + 1
+            eig = nums[1]
+            freq = nums[2] if len(nums) >= 3 else (math.sqrt(abs(eig)) / (2.0 * math.pi) if eig else 0.0)
+            modes.append({"mode": n, "eigenvalue": eig, "frequency_hz": freq})
+        if "displacement" in low or raw.strip().startswith("*"):
+            in_eigs = False
+    return modes
+
+
+def _omega_from(status: dict[str, Any], extra: dict[str, Any]) -> float | None:
+    for src in (extra, status.get("environment") or {}, status.get("inputs") or {}, status.get("constraints") or {}):
+        if not isinstance(src, dict):
+            continue
+        rpm = src.get("n_rpm") if src.get("n_rpm") is not None else src.get("rpm")
+        if rpm in (None, ""):
+            continue
+        try:
+            return 2.0 * math.pi * float(rpm) / 60.0
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _gmsh_mesh(gmsh: str, geo: Path, inp: Path, dest: Path, timeout: int) -> subprocess.CompletedProcess[str]:
@@ -266,14 +337,16 @@ def _one_level(
     dat = work / "part.dat"
     parsed = _parse_stress(dat) if dat.is_file() else {}
     vm = parsed.get("von_mises_max") or 0.0
+    modes = _parse_modes(dat) if dat.is_file() else []
     return {
-        "ok": ccx_run.returncode == 0 and vm > 0,
+        "ok": ccx_run.returncode == 0 and (vm > 0 or bool(modes)),
         "char_m": char,
         "order": used_order,
         "element": element,
         "nodes": len(nodes),
         "von_mises_max": vm,
         "u_max_m": parsed.get("u_max"),
+        "modes": modes,
         "inp": str(inp),
         "handoff": str(work),
         "bcs": resolved,
@@ -313,6 +386,25 @@ def run_fea(
     spec = extra.get("fea_bcs") if isinstance(extra.get("fea_bcs"), dict) else extra
     if not normalize_fea_bcs(spec).get("fix") and not normalize_fea_bcs(spec).get("load"):
         spec = status.get("fea_bcs")
+    omega = _omega_from(status, extra)
+    centrif = bool(extra.get("centrif") or extra.get("CENTRIF") or extra.get("rotating"))
+    if extra.get("centrif") is False:
+        centrif = False
+    modal = bool(extra.get("modal") or extra.get("frequency") or extra.get("FREQUENCY"))
+    if centrif and omega:
+        status["_fea"] = {
+            "centrif": True,
+            "omega": omega,
+            "axis": [0.0, 0.0, 1.0],
+            "modal": modal,
+            "n_modes": extra.get("n_modes") or 8,
+        }
+        if not normalize_fea_bcs(spec).get("fix"):
+            merged = dict(spec or {}) if isinstance(spec, dict) else {}
+            merged.setdefault("fix_selector", "hub")
+            spec = merged
+    elif modal:
+        status["_fea"] = {"centrif": False, "omega": omega or 0.0, "modal": True, "n_modes": extra.get("n_modes") or 8}
     stl_path = _copy_geometry(status, dest)
     bbox = (status.get("part") or {}).get("bbox_m") or [0.04, 0.04, 0.01]
     try:
@@ -338,6 +430,8 @@ def run_fea(
         "material": status.get("material"),
         "notes": preview.get("notes"),
         "spec": preview.get("spec"),
+        "centrif": bool((status.get("_fea") or {}).get("centrif")),
+        "omega": (status.get("_fea") or {}).get("omega"),
     }
     (dest / "bcs.json").write_text(json.dumps(bcs, indent=2, default=str), encoding="utf-8")
     handoff = {
@@ -396,14 +490,24 @@ def run_fea(
     vm = float(winner.get("von_mises_max") or 0.0)
     sf = allow / vm if vm else None
     iterate = []
+    params_mm = (status.get("cadquery") or {}).get("params_mm") or {}
     if sf is not None and sf < sf_req:
-        iterate.append(
-            {
-                "param": "thickness_mm",
-                "reason": f"CalculiX von Mises SF {sf:.2f} < required {sf_req:g}",
-                "scale": (sf_req / max(sf, 0.05)) ** 0.5,
-            }
-        )
+        if "r2_mm" in params_mm:
+            iterate.append(
+                {
+                    "param": "r2_mm",
+                    "reason": f"CalculiX von Mises SF {sf:.2f} < required {sf_req:g} (CENTRIF, not handbook hoop)",
+                    "scale": math.sqrt(max(sf, 0.05) / sf_req),
+                }
+            )
+        else:
+            iterate.append(
+                {
+                    "param": "thickness_mm",
+                    "reason": f"CalculiX von Mises SF {sf:.2f} < required {sf_req:g}",
+                    "scale": (sf_req / max(sf, 0.05)) ** 0.5,
+                }
+            )
     conv = None
     if n_levels > 1:
         conv = {
@@ -441,6 +545,8 @@ def run_fea(
         "von_mises_max": vm,
         "von_mises_MPa": vm / 1e6,
         "u_max_m": winner.get("u_max_m"),
+        "modes": winner.get("modes") or [],
+        "centrif": bool((status.get("_fea") or {}).get("centrif")),
         "SF": sf,
         "allowable_Pa": allow,
         "iterate": iterate,

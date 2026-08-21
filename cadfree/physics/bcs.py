@@ -19,6 +19,8 @@ from cadfree.cad.record import read_stl_triangles
 MM = 0.001
 SELECTORS = {
     "holes",
+    "hub",
+    "min_r",
     "min_x",
     "max_x",
     "min_y",
@@ -173,9 +175,22 @@ def _bbox_band(nodes: list[tuple[int, float, float, float]], axis: int, high: bo
     return [n[0] for n in nodes if n[1 + axis] <= cut]
 
 
+def hub_nodes(nodes: list[tuple[int, float, float, float]], frac: float = 0.28) -> list[int]:
+    """Nodes with hypot(x, y) ≤ frac × r_max. Shaft along +Z."""
+    if not nodes:
+        return []
+    radii = [math.hypot(n[1], n[2]) for n in nodes]
+    rmax = max(radii) if radii else 0.0
+    cut = max(frac, 0.05) * max(rmax, 1e-12)
+    return [n[0] for n, r in zip(nodes, radii) if r <= cut]
+
+
 def selector_nodes(nodes: list[tuple[int, float, float, float]], selector: str) -> list[int]:
     key = str(selector or "").strip()
-    spec = _AXIS.get(key) or _AXIS.get(key.lower())
+    low = key.lower()
+    if low in {"hub", "min_r"}:
+        return hub_nodes(nodes)
+    spec = _AXIS.get(key) or _AXIS.get(low)
     if spec is None:
         return []
     axis, high = spec
@@ -421,8 +436,12 @@ def _resolve_refs(
             ids = selector_nodes(nodes, selector)
             if ids:
                 collected.extend(ids)
-                sources.append("bbox")
-                notes.append(f"{role}: selector {selector} is a bbox band, not a mate face.")
+                if str(selector).strip().lower() in {"hub", "min_r"}:
+                    sources.append("hub")
+                    notes.append(f"{role}: selector {selector} is hypot(x,y) ≤ 0.28 r_max about +Z, not a mate face.")
+                else:
+                    sources.append("bbox")
+                    notes.append(f"{role}: selector {selector} is a bbox band, not a mate face.")
             else:
                 notes.append(f"{role}: selector {selector} matched no nodes.")
 
@@ -472,7 +491,11 @@ def resolve_bcs(
     notes.extend(n2)
     used_named = bool(blob.get("fix") or blob.get("load"))
     fallback = False
-    if not fix or not load:
+    centrif = bool((status.get("_fea") or {}).get("centrif"))
+    if centrif and fix and not load:
+        load_src = "centrif"
+        notes.append("CENTRIF body load — no nodal *CLOAD unless F_N is set.")
+    elif not fix or not load:
         bfix, bload = _bbox_for_direction(nodes, direction)
         if not fix:
             fix = bfix

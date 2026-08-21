@@ -35,6 +35,11 @@ def probe_fluids() -> dict[str, Any]:
 
 
 def run_fluids(status: dict[str, Any], extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    extra = extra or {}
+    if extra.get("mrf") or extra.get("rotating") or extra.get("pack") == "turbo":
+        from cadfree.physics.mrf import run_mrf
+
+        return run_mrf(status, extra)
     probe = probe_fluids()
     sim = Path((status.get("paths") or {}).get("sim") or ".")
     dest = sim / "fluids"
@@ -57,7 +62,6 @@ def run_fluids(status: dict[str, Any], extra: dict[str, Any] | None = None) -> d
     }
     (dest / "case.json").write_text(json.dumps(card, indent=2, default=str), encoding="utf-8")
 
-    extra = extra or {}
     worksheets = []
     for fid in ("reynolds", "dynamic_pressure", "drag_force", "aero_power"):
         formula = BY_ID[fid]

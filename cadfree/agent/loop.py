@@ -30,6 +30,7 @@ PLAN_BLOCKED = {
     "set_load_path",
     "optimize_params",
     "draft_from_image",
+    "draft_impeller",
 }
 
 
@@ -57,13 +58,13 @@ def _bind_tools(project_id: str) -> None:
             "Ask the user a structured form (never guess). Pauses until they submit. "
             "Call this before writing CadQuery on a new spec. Types: choice, multi, number, text, bool. "
             "You write the questions from the spec — there is no hidden drone (or bracket) script. "
-            "template=drone|load is only a shortcut for common ids. Constraint ids also include "
-            "speed_mph, budget_usd, range_km, payload_g, flight_min, vehicle_kind.",
+            "template=drone|load|impeller is only a shortcut for common ids. Constraint ids also include "
+            "speed_mph, budget_usd, range_km, payload_g, flight_min, vehicle_kind, n_rpm, Q_lpm, target_H_m.",
             {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
-                    "template": {"type": "string", "enum": ["drone", "load"]},
+                    "template": {"type": "string", "enum": ["drone", "load", "impeller"]},
                     "questions": {
                         "type": "array",
                         "items": {
@@ -250,7 +251,7 @@ def _bind_tools(project_id: str) -> None:
                     "query": {"type": "string"},
                     "domain": {
                         "type": "string",
-                        "enum": ["friction", "fluids", "aero", "solids", "heat", "maintenance"],
+                        "enum": ["friction", "fluids", "aero", "solids", "heat", "maintenance", "turbo"],
                     },
                 },
                 "required": ["query"],
@@ -277,11 +278,15 @@ def _bind_tools(project_id: str) -> None:
             "run_solvers",
             "Snapshot the built part as SI (metres, N, Pa) and send a mesh copy to packaged "
             "solvers: formula book (always), Gmsh+CalculiX C3D10 FEA if installed "
-            "(values.converge for mesh Richardson), thermal (lumped + optional ccx heat), "
+            "(values.converge for mesh Richardson; pack=turbo writes *DLOAD CENTRIF + hub fixture), "
+            "thermal (lumped + optional ccx heat), "
             "fluids handbook + OpenFOAM simpleFoam template (Cd only if forceCoeffs parses), "
+            "pack=turbo fluids writes a complete MRF case "
+            "(blockMesh → snappyHexMesh → topoSet rotor → simpleFoam; head only if parsed), "
+            "OpenRadioss /LOAD/CENTRI if solvers includes radioss (burst, not CFD), "
             "planar pin/spring statics, 1-DOF RK4 / Exudyn if installed. "
-            "pack=heat|spring|fit|aero. values.fea_bcs or set_load_path names fixtures. "
-            "Then iterate PARAMS from results[].iterate. Never invent FEA/CFD numbers.",
+            "pack=heat|spring|fit|aero|turbo. values.fea_bcs or set_load_path names fixtures. "
+            "Then iterate PARAMS from results[].iterate. Never invent FEA/CFD/NPSHr/η numbers.",
             {
                 "type": "object",
                 "properties": {
@@ -289,13 +294,13 @@ def _bind_tools(project_id: str) -> None:
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["analytical", "fea", "fluids", "thermal", "dynamics", "topology", "mechanism"],
+                            "enum": ["analytical", "fea", "fluids", "thermal", "dynamics", "topology", "mechanism", "radioss"],
                         },
                     },
                     "values": {"type": "object"},
                     "pack": {
                         "type": "string",
-                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor", "spring", "mechanism", "fit", "heat"],
+                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor", "spring", "mechanism", "fit", "heat", "turbo"],
                     },
                     "part_id": {"type": "string"},
                 },
@@ -466,16 +471,16 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "optimize_params",
-            "Search structural PARAMS against rung-0 feasibility (mass / SF / envelope) "
-            "without rewriting CadQuery each step. Scales the current mesh by PARAMS ratios. "
-            "goal=mass|sf|pareto. bounds={thickness_mm:{min,max}, ...} or default ±50%. "
-            "max_evals≈40. apply=true writes the winner via set_params — then build_model "
-            "and check_feasibility. FEA is not inside this loop; run_solvers verifies after.",
+            "Search PARAMS without rewriting CadQuery each step. Brackets: rung-0 mass/SF on a "
+            "scaled mesh, goal=mass|sf|pareto. Impellers (r2_mm / beta2_deg present, or goal=head|hoop|turbo): "
+            "meanline Euler/Wiesner/hoop only — no mesh rebuild, no invented η/NPSHr. "
+            "bounds={param:{min,max}}. max_evals≈40. apply=true writes the winner via set_params — "
+            "then build_model and run_solvers pack=turbo. FEA/OpenRadioss are not inside this loop.",
             {
                 "type": "object",
                 "properties": {
                     "bounds": {"type": "object"},
-                    "goal": {"type": "string", "enum": ["mass", "sf", "pareto"]},
+                    "goal": {"type": "string", "enum": ["mass", "sf", "pareto", "head", "hoop", "turbo"]},
                     "max_evals": {"type": "integer"},
                     "apply": {"type": "boolean"},
                     "part_id": {"type": "string"},
@@ -640,6 +645,22 @@ def _bind_tools(project_id: str) -> None:
                 },
             },
             handlers["draft_from_image"],
+            mutating=True,
+        ),
+        Tool(
+            "draft_impeller",
+            "Write a parametric centrifugal impeller CadQuery script (backplate + hub + blades). "
+            "Blade meanline follows β from tangential so set_params + build_model changes the solid. "
+            "Mutating. Then ask_survey template=impeller for n_rpm / Q / target_H_m, then "
+            "run_solvers pack=turbo. Not a pump curve, not CFD.",
+            {
+                "type": "object",
+                "properties": {
+                    "params": {"type": "object"},
+                    "part_id": {"type": "string"},
+                },
+            },
+            handlers["draft_impeller"],
             mutating=True,
         ),
     ]

@@ -249,6 +249,50 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
         inputs["mu"] = float(mu)
     if "Cd" not in inputs and constraints.get("Cd") is not None:
         inputs["Cd"] = float(constraints["Cd"])
+    if n_rpm is None and params.get("n_rpm") is not None:
+        try:
+            n_rpm = float(params["n_rpm"])
+            inputs["n_rpm"] = n_rpm
+        except (TypeError, ValueError):
+            pass
+    if "n_blades" in params:
+        try:
+            z = float(params["n_blades"])
+            inputs["z"] = z
+            inputs["n_blades"] = z
+        except (TypeError, ValueError):
+            pass
+    for deg_key, rad_key in (("beta1_deg", "beta1"), ("beta2_deg", "beta2")):
+        if deg_key not in params:
+            continue
+        try:
+            deg = float(params[deg_key])
+        except (TypeError, ValueError):
+            continue
+        inputs[deg_key] = deg
+        inputs[rad_key] = math.radians(deg)
+    q = None
+    for key, scale in (("Q_m3s", 1.0), ("Q", 1.0), ("flow_m3s", 1.0), ("Q_lpm", 1.0 / 60000.0), ("Q_gpm", 6.309e-5)):
+        raw = constraints.get(key)
+        if raw is None:
+            continue
+        try:
+            q = float(raw) * scale
+            break
+        except (TypeError, ValueError):
+            continue
+    if q is not None:
+        inputs["Q"] = q
+        inputs["Q_m3s"] = q
+    for src_key, si_key in (("p_inlet_pa", "p_inlet"), ("npshr_m", "NPSHr"), ("target_H_m", "target_H"), ("blockage", "psi")):
+        raw = constraints.get(src_key)
+        if raw is None:
+            continue
+        try:
+            inputs[si_key] = float(raw)
+            inputs[src_key] = float(raw)
+        except (TypeError, ValueError):
+            pass
     try:
         k_th = float(material.get("k") or 0.2)
         inputs["k"] = k_th
@@ -340,6 +384,8 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
         + (f" × FDM knockdown {material.get('fdm_knockdown'):.2f}" if (material.get("fdm_knockdown") or 1) < 0.999 else ""),
         "F_N": "constraints load_* converted to N" if load is not None else "missing — survey load",
         "v": "constraints v_ms / rpm" if v_ms is not None else "missing — survey speed if fluids/friction",
+        "n_rpm": "constraints n_rpm / rpm" if n_rpm is not None else "missing — survey shaft speed for turbo",
+        "Q": "constraints Q_m3s / Q_lpm / Q_gpm" if q is not None else "missing — survey flow; never invent Q",
         "mu": "constraints mu or book pair" if mu is not None else "missing — do not invent μ",
         "Cd": "constraints Cd, else book blunt-body default 1.0",
         "rho": f"book fluid {fluid_name}",
@@ -382,6 +428,7 @@ def write_si_status(project_id: str, part_id: str | None = None) -> dict[str, An
         },
         "fea_bcs": constraints.get("fea_bcs"),
         "project_id": project_id,
+        "constraints": constraints,
         "environment": {
             "fluid": fluid_name,
             "rho": fluid["rho"],
