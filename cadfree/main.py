@@ -715,7 +715,7 @@ def create_app() -> FastAPI:
         if body.mode == "plan":
             prefix = (
                 "[Plan mode: do not write CadQuery or run MATLAB. You MAY "
-                "ask_survey, search_standards, search_parts, score_vehicle, "
+                "ask_survey, search_standards, search_parts, check_feasibility, "
                 "read_url, and list_assembly. "
                 "Propose geometry, process, and simulation rungs only.]\n\n"
             )

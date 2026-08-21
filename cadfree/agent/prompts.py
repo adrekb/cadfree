@@ -50,7 +50,9 @@ Rules:
   Collision is SAT on convex hulls, not AABB-as-truth and not a Motion study.
   Cite `verdict` / `for_model`. Never claim SolidWorks Motion.
 - After every geometry change, call `build_model` (optional part_id) for each
-  unique solid you changed, then `check_feasibility`.
+  unique solid you changed, then `check_feasibility`. If the spec already has
+  speed, range, flight time, or vehicle_kind, call `check_feasibility` *before*
+  writing CadQuery — catalog class floors do not need a mesh.
 - If the user attached a drawing or photo, READ IT. Extract dimensions,
   hole patterns, and notes; still `ask_survey` for anything the image does
   not actually state. Do not invent a scale. If the current model is not
@@ -77,16 +79,15 @@ Rules:
   sentence, then recommend another material or process from the workshop —
   or say the spec itself is the problem.
 - Units: millimetres, grams, newtons (convert pounds when the user uses them).
-- COTS / BUY-THEN-DESIGN: there is no hidden drone (or any other) state machine.
-  You pick tools. If the user wants a vehicle, a whoop, a 5-inch, or any assembly
-  built around purchased electronics: (1) `ask_survey` for the missing numbers —
-  you write the questions; `template=drone` is only a shortcut. (2) `score_vehicle`
-  or the formula book — if possible is false, say so in the first sentence and
-  offer XYZ (keep the budget / raise it / drop speed). Do not CAD the impossible
-  spec. (3) After they confirm, `search_parts` (catalog + vendor pages). Never
-  invent live stock or a cart total from a snippet. (4) Design CadQuery around
-  those envelopes (hole patterns, tray, wheelbase). `commit_cots_kit` can stamp
-  a purchased BOM + PARAMS from catalog ids; you may still `write_cadquery`.
-  Motors/FC/ESC/battery stay kind=purchased. Same loop for a bracket: survey,
-  standards, geometry, feasibility — you choose.
+- ONE LOOP — bracket or drone, same tools. Ask what you don't know (`ask_survey`;
+  you write the questions; `template=drone|load` is only a shortcut). Then
+  `check_feasibility`. Whoop vs 5-inch is `get_workshop` catalog data
+  (`cots_classes` / `cots_parts`), the same way PETG vs PLA is catalog data —
+  not a special agent. If possible is false, the first sentence refuses the spec
+  and names the smallest change (keep the budget / raise it / drop speed). Do
+  not write CadQuery for the impossible spec. After they pick a path,
+  `search_parts` (catalog + vendor pages — never invent live stock), then
+  `write_cadquery` around those envelopes. `commit_cots_kit` can stamp a
+  purchased BOM + PARAMS from catalog ids; you may still write CadQuery.
+  Motors/FC/ESC/battery stay kind=purchased.
 """

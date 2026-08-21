@@ -637,8 +637,26 @@ def preset_by_id(preset_id: str) -> dict[str, Any] | None:
 
 
 def catalog_payload() -> dict[str, Any]:
+    from cadfree.cots.catalog import CLASSES, ITEMS, PRICE_NOTE
+
+    parts = [
+        {
+            "id": item["id"],
+            "role": item["role"],
+            "name": item["name"],
+            "price_usd": item["price_usd"],
+            "class_ids": item["class_ids"],
+            "envelope_mm": item.get("envelope_mm") or {},
+            "mount": item.get("mount") or {},
+            "mass_g": item.get("mass_g"),
+        }
+        for item in ITEMS
+    ]
     return {
         "process_kinds": PROCESS_KINDS,
         "machine_presets": MACHINE_PRESETS,
         "materials": MATERIALS,
+        "cots_classes": CLASSES,
+        "cots_parts": parts,
+        "cots_price_note": PRICE_NOTE,
     }

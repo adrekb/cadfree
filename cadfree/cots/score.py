@@ -137,6 +137,90 @@ def _alt(
     }
 
 
+def spec_fields_present(spec: dict[str, Any]) -> bool:
+    """Vehicle class check — not a 50 lb bracket (load_lbf / max_mass_g).
+
+    budget_usd or payload_g alone must not hijack a shop DFM check. Speed, range,
+    flight time, or vehicle_kind mean the catalog class table applies.
+    """
+    return any(
+        spec.get(key) not in (None, "")
+        for key in ("speed_mph", "range_km", "flight_min", "vehicle_kind")
+    )
+
+
+def catalog_spec_overlay(constraints: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Same feasibility object as a shop check — classes are catalog rows, not a drone agent."""
+    from cadfree.manufacturing.types import Check, Recommendation
+
+    spec = spec_from_constraints(constraints)
+    if not spec_fields_present(spec):
+        return None
+    score = score_vehicle_spec(**spec)
+
+    def _pack(possible: bool, verdict: str, summary: str, checks: list, recs: list) -> dict[str, Any]:
+        return {
+            "possible": possible,
+            "verdict": verdict,
+            "summary": summary,
+            "checks": [c.to_dict() for c in checks],
+            "recommendations": [r.to_dict() for r in recs],
+            "score": score,
+            "assumptions": [DISCLAIMER],
+        }
+    if score.get("missing"):
+        return _pack(
+            False,
+            "unknown",
+            score["for_model"],
+            [
+                Check(
+                    "catalog_class",
+                    "Catalog class",
+                    "fail",
+                    score["for_model"],
+                    details={"missing": score["missing"]},
+                )
+            ],
+            [Recommendation("spec", "Survey speed and budget before designing. Do not invent them.")],
+        )
+    if score.get("possible") is True:
+        return _pack(
+            True,
+            "feasible",
+            score["for_model"],
+            [
+                Check(
+                    "catalog_class",
+                    "Catalog class",
+                    "pass",
+                    score["for_model"],
+                    details={"class_id": score.get("class_id")},
+                )
+            ],
+            [],
+        )
+    recs = [
+        Recommendation("spec", str(a.get("change") or a.get("label") or ""), to_value=a.get("class_id"))
+        for a in (score.get("alternatives") or [])
+    ]
+    return _pack(
+        False,
+        "needs_spec_change",
+        score["for_model"],
+        [
+            Check(
+                "catalog_class",
+                "Catalog class",
+                "fail",
+                score["for_model"],
+                details={"alternatives": score.get("alternatives") or [], "class_id": score.get("class_id")},
+            )
+        ],
+        recs,
+    )
+
+
 def score_vehicle_spec(
     *,
     speed_mph: float | None = None,
@@ -172,8 +256,7 @@ def score_vehicle_spec(
             "missing": missing,
             "wanted": wanted,
             "for_model": (
-                "Need cruise speed and budget before scoring. "
-                "ask_survey for the missing numbers — do not guess. template=drone is only a shortcut."
+                "ask_survey for the missing numbers — do not guess."
             ),
             "for_user": "Speed and budget first — the form is the next step, not a guessed CAD frame.",
             "disclaimer": DISCLAIMER,
@@ -239,8 +322,8 @@ def score_vehicle_spec(
         cap = class_physics_mph(chosen, payload_g)
         sentence = (
             f"A {chosen['label']} can do about {speed_mph:g} mph on a ~${chosen['cost_typical_usd']:g} "
-            f"COTS cart (floor ~${chosen['cost_floor_usd']:g}). Search parts and design the airframe "
-            f"around those envelopes, or use commit_cots_kit as a helper."
+            f"COTS cart (floor ~${chosen['cost_floor_usd']:g}). Design the printable airframe "
+            f"around those catalog envelopes."
         )
         return {
             "ok": True,

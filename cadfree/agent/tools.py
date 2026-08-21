@@ -41,8 +41,8 @@ from cadfree.physics.dispatch import run_solvers, solve_on_part
 from cadfree.physics.topology import run_generate
 from cadfree.physics.engine import solve_formula
 from cadfree.store.db import db
-from cadfree.cots.kit import commit_cots_kit, propose_vehicle, search_parts
-from cadfree.cots.score import score_vehicle_spec, spec_from_constraints
+from cadfree.cots.kit import commit_cots_kit, search_parts
+from cadfree.cots.score import catalog_spec_overlay
 
 
 def _row(project_id: str) -> dict[str, Any]:
@@ -249,10 +249,41 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         if not stl.is_file():
             stl = work / "model.stl"
         metrics = _metrics(p, stl.parent) if stl.is_file() else _metrics(p, work)
+        overlay = catalog_spec_overlay(constraints)
+
         if metrics is None:
+            if overlay:
+                data = {
+                    "ok": True,
+                    "possible": overlay["possible"],
+                    "verdict": overlay["verdict"],
+                    "summary": overlay["summary"],
+                    "checks": overlay["checks"],
+                    "recommendations": overlay["recommendations"],
+                    "mass": {},
+                    "strength": {},
+                    "assumptions": overlay["assumptions"]
+                    + ["No mesh yet — this is the catalog class / spec score, not DFM on a solid."],
+                    "catalog_class": overlay["score"],
+                    "geometry": False,
+                }
+                _save_build(project_id, {"metrics": {}}, data)
+                return data
             return {"ok": False, "error": "Build the model before checking feasibility."}
+
         report = evaluate(metrics, caps, constraints)
         data = report.to_dict()
+        data["ok"] = True
+        data["geometry"] = True
+        if overlay:
+            data["checks"] = list(overlay["checks"]) + list(data.get("checks") or [])
+            data["recommendations"] = list(overlay["recommendations"]) + list(data.get("recommendations") or [])
+            data["assumptions"] = list(overlay.get("assumptions") or []) + list(data.get("assumptions") or [])
+            data["catalog_class"] = overlay["score"]
+            if overlay["possible"] is False:
+                data["possible"] = False
+                data["verdict"] = overlay["verdict"]
+                data["summary"] = overlay["summary"]
         if snap.get("expanded_count", 1) > 1:
             qty = next((b["qty"] for b in snap.get("bom") or [] if b["part_id"] == active["id"]), 1)
             mass = dict(data.get("mass") or {})
@@ -319,15 +350,6 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "waiting": True,
             "note": "The form is on screen. Do not invent answers; wait for the tool result.",
         }
-
-    def score_vehicle(**kwargs: Any) -> dict[str, Any]:
-        p = _row(project_id)
-        constraints = json.loads(p["constraints"] or "{}")
-        spec = spec_from_constraints(constraints, kwargs or None)
-        return score_vehicle_spec(**spec)
-
-    def propose_veh(**kwargs: Any) -> dict[str, Any]:
-        return propose_vehicle(project_id, **(kwargs or {}))
 
     def search_cots(
         query: str,
@@ -526,8 +548,6 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "solve_formula": solve_f,
         "run_solvers": solvers,
         "generate_designs": generate_designs,
-        "score_vehicle": score_vehicle,
-        "propose_vehicle": propose_veh,
         "search_parts": search_cots,
         "commit_cots_kit": commit_kit,
     }

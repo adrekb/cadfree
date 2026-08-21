@@ -39,7 +39,9 @@ def test_mcp_discover_is_stateless(tmp_path, monkeypatch):
     assert result["resultType"] == "complete"
     assert PROTOCOL in result["supportedVersions"]
     assert "tools" in result["capabilities"]
-    assert "no hidden drone" in result["instructions"].lower() or "pick tools" in result["instructions"].lower()
+    assert "check_feasibility" in result["instructions"].lower()
+    assert "catalog" in result["instructions"].lower()
+    assert "score_vehicle" not in result["instructions"].lower()
 
 
 def test_mcp_tools_list_and_call(tmp_path, monkeypatch):
@@ -52,8 +54,10 @@ def test_mcp_tools_list_and_call(tmp_path, monkeypatch):
     )
     names = {t["name"] for t in listed.json()["result"]["tools"]}
     assert "ask_survey" in names
-    assert "score_vehicle" in names
+    assert "check_feasibility" in names
     assert "search_parts" in names
+    assert "score_vehicle" not in names
+    assert "propose_vehicle" not in names
     assert all("project_id" in (t["inputSchema"].get("properties") or {}) for t in listed.json()["result"]["tools"])
 
     created = client.post("/api/projects", json={"name": "mcp", "spec_text": "bracket", "constraints": {}})
@@ -75,7 +79,11 @@ def test_mcp_tools_list_and_call(tmp_path, monkeypatch):
     assert called.status_code == 200
     body = called.json()["result"]
     assert body["resultType"] == "complete"
-    assert body["structuredContent"]["catalog"]
+    catalog = body["structuredContent"]["catalog"]
+    assert catalog
+    class_ids = {c["id"] for c in catalog["cots_classes"]}
+    assert "whoop_65" in class_ids
+    assert "five_inch" in class_ids
 
 
 def test_mcp_header_mismatch():

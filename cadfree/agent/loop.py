@@ -35,7 +35,10 @@ def _bind_tools(project_id: str) -> None:
     tools = [
         Tool(
             "get_workshop",
-            "List the user's machines, materials, CadQuery/MATLAB/FEA availability.",
+            "List the user's machines, materials, CadQuery/MATLAB/FEA availability. "
+            "catalog.cots_classes and catalog.cots_parts are whoop / 3-inch / 5-inch / "
+            "7-inch rows and street-typical motors/props/batteries/FC/ESC — same catalog "
+            "as PETG vs PLA, not a special drone agent. Prices are not live stock.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             handlers["get_workshop"],
         ),
@@ -317,27 +320,6 @@ def _bind_tools(project_id: str) -> None:
             mutating=True,
         ),
         Tool(
-            "score_vehicle",
-            "First-order 'does this speed/cost/range/payload close?' for a multirotor. "
-            "Class cost floors plus leftover-thrust vs drag. Not a propeller map, not live stock. "
-            "Optional — you can also lookup_formula / solve_formula. Call this when the user "
-            "named speed and budget; quote for_model if possible is false.",
-            {
-                "type": "object",
-                "properties": {
-                    "speed_mph": {"type": "number"},
-                    "budget_usd": {"type": "number"},
-                    "range_km": {"type": "number"},
-                    "payload_g": {"type": "number"},
-                    "flight_min": {"type": "number"},
-                    "vehicle_kind": {"type": "string"},
-                    "printed_frame": {"type": "boolean"},
-                    "cots_electronics": {"type": "boolean"},
-                },
-            },
-            handlers["score_vehicle"],
-        ),
-        Tool(
             "search_parts",
             "Find COTS parts: bundled street-typical catalog (motors, props, batteries, FC, ESC) "
             "plus optional vendor web hits (intent=parts). Never claim live stock or a cart price "
@@ -359,28 +341,12 @@ def _bind_tools(project_id: str) -> None:
             handlers["search_parts"],
         ),
         Tool(
-            "propose_vehicle",
-            "Optional shortcut: score the current constraints and suggest a typical catalog cart. "
-            "Not a required pipeline — you may score_vehicle, search_parts, and write_cadquery yourself.",
-            {
-                "type": "object",
-                "properties": {
-                    "speed_mph": {"type": "number"},
-                    "budget_usd": {"type": "number"},
-                    "range_km": {"type": "number"},
-                    "payload_g": {"type": "number"},
-                    "flight_min": {"type": "number"},
-                    "vehicle_kind": {"type": "string"},
-                },
-            },
-            handlers["propose_vehicle"],
-        ),
-        Tool(
             "commit_cots_kit",
             "Optional helper: stamp purchased BOM lines from catalog ids and hole a printable "
             "X-frame PARAMS around those envelopes (motor PCD, FC square, battery tray). "
             "You may write_cadquery instead. Electronics stay kind=purchased — do not CadQuery a BLDC. "
-            "If score_vehicle said impossible, pass accept_alternative=true and the class_id the user picked.",
+            "If check_feasibility refused the spec, pass accept_alternative=true and the class_id "
+            "the user picked. Not a required pipeline.",
             {
                 "type": "object",
                 "properties": {
@@ -497,7 +463,12 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "check_feasibility",
-            "DFM + mass budget + first-order strength against the selected production methods.",
+            "Score the spec against the workshop and the catalog — same tool for a 50 lb "
+            "bracket and a drone. Whoop vs 5-inch lives in get_workshop.catalog.cots_classes, "
+            "not a special agent. Class floors (speed/cost/range/payload) run even before a "
+            "mesh exists. After build_model this also does DFM, mass, and first-order strength. "
+            "If possible is false, say so first and name the smallest change. Do not CAD an "
+            "impossible spec.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             handlers["check_feasibility"],
         ),

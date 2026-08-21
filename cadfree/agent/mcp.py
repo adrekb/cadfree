@@ -32,8 +32,9 @@ INTERNAL = -32603
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "testserver"}
 
 INSTRUCTIONS = (
-    "Cadfree skills: survey instead of guessing, honest feasibility, COTS search, "
-    "CadQuery around envelopes, DFM. There is no hidden drone workflow — pick tools. "
+    "Cadfree: one loop — ask_survey for what you don't know, check_feasibility "
+    "(workshop DFM and catalog classes; whoop vs 5-inch is catalog data, not a "
+    "special agent), refuse an impossible spec, then CadQuery around envelopes. "
     "Every tools/call needs project_id (the studio project handle). Catalog prices "
     "are street-typical, not live stock. Never invent FEA, clause numbers, or inventory."
 )

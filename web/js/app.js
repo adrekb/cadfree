@@ -1118,7 +1118,7 @@ async function sendChatText(text) {
                     renderGenerate(ev.result || {});
                     refreshViewer(currentProjectId);
                     api('/api/projects/' + currentProjectId).then(p => renderParts(p.assembly || {})).catch(() => {});
-                } else if (ev.type === 'tool_result' && (ev.name === 'score_vehicle' || ev.name === 'propose_vehicle' || ev.name === 'search_parts' || ev.name === 'commit_cots_kit')) {
+                } else if (ev.type === 'tool_result' && (ev.name === 'search_parts' || ev.name === 'commit_cots_kit')) {
                     renderVehicle(ev.name, ev.result || {});
                     if (ev.name === 'commit_cots_kit' && ev.result && ev.result.ok) {
                         refreshViewer(currentProjectId);
@@ -1126,6 +1126,9 @@ async function sendChatText(text) {
                     }
                 } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
                     renderFeasibility(ev.result || {});
+                    if (ev.result && ev.result.catalog_class) {
+                        renderVehicle('check_feasibility', ev.result.catalog_class);
+                    }
                 } else if (ev.type === 'error') {
                     appendMsg('error', ev.message);
                 }

@@ -149,7 +149,7 @@ def confirm_questions(score: dict[str, Any], kit: dict[str, Any] | None = None) 
         total = (kit or {}).get("total_usd")
         extra = f" (~${total:g} catalog)" if total is not None else ""
         return {
-            "title": "Build this drone?",
+            "title": "Build this kit?",
             "questions": [
                 {
                     "id": "confirm_kit",
@@ -177,30 +177,6 @@ def confirm_questions(score: dict[str, Any], kit: dict[str, Any] | None = None) 
                 "required": True,
             }
         ],
-    }
-
-
-def propose_vehicle(project_id: str, **overrides: Any) -> dict[str, Any]:
-    constraints = _constraints(project_id)
-    spec = spec_from_constraints(constraints, overrides)
-    score = score_vehicle_spec(**spec)
-    if score.get("missing"):
-        return {
-            **score,
-            "survey": {"template": "drone", "title": "Before we design a drone"},
-        }
-    class_id = score.get("class_id")
-    if not class_id and (score.get("alternatives") or []):
-        class_id = score["alternatives"][0].get("class_id")
-    kit = pick_kit(class_id, budget_usd=spec.get("budget_usd")) if class_id else None
-    return {
-        **score,
-        "proposed_kit": kit,
-        "confirm_survey": confirm_questions(score, kit if isinstance(kit, dict) else None),
-        "note": (
-            "Optional bundle of score + a typical cart. You can ignore this and "
-            "call score_vehicle / search_parts / write_cadquery yourself."
-        ),
     }
 
 
@@ -241,8 +217,8 @@ def commit_cots_kit(
             "score": score,
             "confirm_survey": confirm_questions(score),
             "next": (
-                "The requested speed/budget does not close. Quote for_model, "
-                "ask_survey with confirm_survey, then commit_cots_kit("
+                "The requested speed/budget does not close. Quote check_feasibility "
+                "summary, ask_survey with confirm_survey, then commit_cots_kit("
                 "accept_alternative=true, class_id=...)."
             ),
         }
@@ -251,7 +227,7 @@ def commit_cots_kit(
             "ok": False,
             "error": score.get("for_model"),
             "score": score,
-            "next": "ask_survey template=drone",
+            "next": "ask_survey for the missing numbers, then check_feasibility.",
         }
     if not chosen_class:
         alts = score.get("alternatives") or []
