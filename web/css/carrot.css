@@ -53,7 +53,7 @@
      Windows 11 — both close in spirit to what we're after. */
   --sans: "InterVar", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --display: "InterVar", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --serif: ui-serif, "Iowan Old Style", Charter, Cambria, "Palatino Linotype", Georgia, serif;
+  --serif: "InterVar", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --radius: 14px;
   --radius-sm: 10px;
   --radius-lg: 20px;
@@ -74,7 +74,7 @@ body {
 }
 .page-head h1, .page-head h2, .splash-card h1, .dash-head h1,
 .settings-head h3, .ext-head h3 {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-weight: 500;
   letter-spacing: -0.012em;
 }
@@ -3006,10 +3006,9 @@ select option:checked { background-color: #2f333d; }
    variable swap rather than a second stylesheet.
 
    Two independent axes:
-     html[data-theme]  = dark | light        (ground + glass)
+     html[data-theme]  = dark only           (ground + glass)
      html[data-accent] = carrot | ember | …  (accent + ambient wash)
-   "auto" is resolved to one of the two by theme.js before first paint,
-   so it never appears in the DOM and nothing here has to match it. */
+   Light / auto are coerced to dark in theme.js before first paint. */
 
 :root {
   --scheme: dark;
@@ -3042,52 +3041,9 @@ select option:checked { background-color: #2f333d; }
   --wash-strength: 1;
 }
 
-/* ---- Light ----
-   Not the dark palette inverted: a warm paper ground, and the glass
-   goes to white-over-colour so the ambient wash still reads through. */
+/* Light is not offered. Leftover data-theme="light" still paints dark. */
 :root[data-theme="light"] {
-  --scheme: light;
-  --bg: #f6f4f1;
-  --bg2: #fbfaf8;
-  --card: #ffffff;
-  --card2: #f2efeb;
-  --card3: #e7e3dd;
-  --border: rgba(38, 32, 26, 0.10);
-  --border-hi: rgba(38, 32, 26, 0.17);
-  --text: #1c1a18;
-  --muted: #5f5a54;
-  --faint: #8a847c;
-  --on-accent: #2a1508;
-
-  --shadow-sm: 0 1px 2px rgba(38, 30, 22, 0.07);
-  --shadow: 0 8px 24px rgba(38, 30, 22, 0.10);
-  --shadow-lg: 0 24px 64px rgba(38, 30, 22, 0.16);
-
-  --glass-bar: rgba(255, 255, 255, 0.62);
-  --glass-nav: rgba(255, 255, 255, 0.48);
-  --glass-card: rgba(255, 255, 255, 0.66);
-  --glass-card-hi: rgba(255, 255, 255, 0.82);
-  --glass-pop: rgba(255, 255, 255, 0.84);
-  --glass-bar-edge: rgba(38, 32, 26, 0.09);
-  --glass-nav-edge: rgba(38, 32, 26, 0.07);
-  --glass-card-edge: rgba(38, 32, 26, 0.085);
-  --glass-card-edge-hi: rgba(38, 32, 26, 0.14);
-  --glass-pop-edge: rgba(38, 32, 26, 0.12);
-  /* On white, a white inset highlight is invisible — the rim has to be a
-     soft shadow instead, so these go dark and very faint. */
-  --glass-inset: rgba(38, 32, 26, 0.05);
-  --glass-inset-hi: rgba(38, 32, 26, 0.07);
-  --glass-sheen: rgba(38, 32, 26, 0.14);
-  --glass-hover: rgba(38, 32, 26, 0.06);
-  --veil: rgba(246, 244, 241, 0.62);
-  --scrim: rgba(60, 54, 48, 0.34);
-
-  --opt-bg: #ffffff;
-  --opt-text: #1c1a18;
-  --opt-sel: #eee9e2;
-
-  --wash-sat: 150%;
-  --wash-strength: 0.62;   /* the same glow over white would be garish */
+  --scheme: dark;
 }
 
 /* ---- Accents ----
@@ -3213,21 +3169,7 @@ select option, select optgroup { background-color: var(--opt-bg); color: var(--o
 select option:checked { background-color: var(--opt-sel); }
 
 /* The whole window, so scrollbars and form controls follow the theme. */
-html, body { color-scheme: var(--scheme); }
-
-/* Light mode inverts which way "raised" reads: an inset white line does
-   nothing on white, so cards lean on their shadow instead. */
-:root[data-theme="light"] .settings-card,
-:root[data-theme="light"] .ext-section,
-:root[data-theme="light"] .hub-card,
-:root[data-theme="light"] .widget-card,
-:root[data-theme="light"] .hub-spec-card {
-  box-shadow: 0 1px 2px rgba(38, 30, 22, 0.05), 0 6px 18px rgba(38, 30, 22, 0.05);
-}
-:root[data-theme="light"] .btn-primary { box-shadow: 0 1px 2px rgba(38, 30, 22, 0.14); }
-:root[data-theme="light"] select {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f5a54' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
-}
+html, body { color-scheme: dark; }
 .btn-primary { color: var(--on-accent); }
 
 /* Switching themes should feel like a dimmer, not a page reload — but
@@ -3249,14 +3191,14 @@ h1, h2, h3,
 .card-title, .settings-head h3, .ext-head h3, .page-head h1, .page-head h2,
 .dash-head h1, .splash-card h1, .hub-card h4, .widget-card .card-title,
 .empty-widget .empty-title, .greeting, .section-title {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-weight: 500;
   letter-spacing: -0.014em;
 }
 .card-title { font-size: 14.5px; }
 .page-head h2 { font-weight: 500; }
 /* Blockquotes and the research narrative read better set, too. */
-.msg-assistant blockquote, .research-summary { font-family: var(--serif); }
+.msg-assistant blockquote, .research-summary { font-family: var(--sans); }
 /* Numerals in a serif face are old-style and wander on a baseline, which
    looks wrong in tables and counters. Keep those lining and tabular. */
 .stat-value, .metric, .count, td, th, .kbd, code, pre {
@@ -3316,7 +3258,7 @@ code, pre, .kbd { font-family: var(--mono); }
   box-shadow: var(--shadow-lg), inset 0 1px 0 var(--glass-inset-hi);
 }
 .path-prompt-title {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 17px;
   font-weight: 500;
   letter-spacing: -0.014em;
@@ -3439,131 +3381,18 @@ code, pre, .kbd { font-family: var(--mono); }
   text-overflow: ellipsis;
 }
 
-/* =====================================================================
-   Charcoal & cream
-   =====================================================================
-   An editorial pass, not a hue swap. Two typefaces doing different jobs:
-   Playfair Display for anything that announces itself (a Didone — high
-   stroke contrast, small apertures, and it only looks right large), and
-   Vollkorn for anything you actually read (a warm text serif that holds
-   up at 13px, which Playfair does not). Inter stays for controls, labels
-   and data, where a serif costs legibility and buys nothing.
-
-   Both are SIL OFL. The other uploads could not be shipped: Basheq Vintage
-   is a demo licence, Bodoni FLF and Aloe Vera are non-commercial, and this
-   app is redistributed in a public installer.
-   License texts: /assets/fonts/*-OFL.txt */
-@font-face {
-  font-family: "Vollkorn";
-  src: url("/assets/fonts/Vollkorn-Regular.woff2") format("woff2");
-  font-weight: 400; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: "Vollkorn";
-  src: url("/assets/fonts/Vollkorn-Italic.woff2") format("woff2");
-  font-weight: 400; font-style: italic; font-display: swap;
-}
-@font-face {
-  font-family: "Vollkorn";
-  src: url("/assets/fonts/Vollkorn-Medium.woff2") format("woff2");
-  font-weight: 500; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: "Vollkorn";
-  src: url("/assets/fonts/Vollkorn-Semibold.woff2") format("woff2");
-  font-weight: 600; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: "PlayfairDisplay";
-  src: url("/assets/fonts/PlayfairDisplay-Regular.woff2") format("woff2");
-  font-weight: 400; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: "PlayfairDisplay";
-  src: url("/assets/fonts/PlayfairDisplay-Medium.woff2") format("woff2");
-  font-weight: 500; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: "PlayfairDisplay";
-  src: url("/assets/fonts/PlayfairDisplay-Italic.woff2") format("woff2");
-  font-weight: 400; font-style: italic; font-display: swap;
+/* Inter on every surface. Display/serif tokens resolve to InterVar so
+   leftover var(--display) / var(--serif) rules stay sans. */
+:root, :root[data-theme="dark"], :root[data-theme="light"] {
+  --display: "InterVar", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --serif: "InterVar", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 
-:root {
-  --display: "PlayfairDisplay", ui-serif, Georgia, serif;
-  --serif: "Vollkorn", ui-serif, "Iowan Old Style", Charter, Georgia, serif;
-
-  /* Charcoal: warm and slightly green-black, the colour of pressed ink
-     rather than the blue-black of a screen. Surfaces separate by a few
-     percent of luminance, never by a line. */
-  --bg: #16150f;
-  --bg2: #1b1a13;
-  --card: #22201a;
-  --card2: #2b2921;
-  --card3: #35322a;
-  --border: rgba(232, 222, 200, 0.08);
-  --border-hi: rgba(232, 222, 200, 0.15);
-
-  /* Cream, not white. #fff on a warm charcoal reads blue and buzzes. */
-  --text: #f2ece0;
-  --muted: #a89f8d;
-  --faint: #77705f;
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
-  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.55);
-
-  --glass-bar: rgba(27, 26, 19, 0.55);
-  --glass-nav: rgba(24, 23, 17, 0.38);
-  --glass-card: rgba(43, 41, 33, 0.42);
-  --glass-card-hi: rgba(50, 47, 38, 0.5);
-  --glass-pop: rgba(34, 32, 26, 0.7);
-  --glass-bar-edge: rgba(232, 222, 200, 0.08);
-  --glass-nav-edge: rgba(232, 222, 200, 0.06);
-  --glass-card-edge: rgba(232, 222, 200, 0.08);
-  --glass-card-edge-hi: rgba(232, 222, 200, 0.13);
-  --glass-pop-edge: rgba(232, 222, 200, 0.12);
-  --glass-inset: rgba(255, 246, 226, 0.05);
-  --glass-inset-hi: rgba(255, 246, 226, 0.08);
-  --glass-sheen: rgba(255, 246, 226, 0.2);
-  --glass-hover: rgba(255, 246, 226, 0.07);
-  --veil: rgba(22, 21, 15, 0.6);
-  --scrim: rgba(12, 11, 8, 0.66);
-
-  --opt-bg: #26241d;
-  --opt-text: #f2ece0;
-  --opt-sel: #333027;
-}
-
-/* Cream ground, charcoal ink — the same relationship inverted, so light
-   mode reads as paper rather than as a switched-off screen. */
-:root[data-theme="light"] {
-  --bg: #f4efe4;
-  --bg2: #faf6ed;
-  --card: #fffdf8;
-  --card2: #efe9db;
-  --card3: #e3dccb;
-  --border: rgba(40, 34, 22, 0.11);
-  --border-hi: rgba(40, 34, 22, 0.18);
-  --text: #1e1b14;
-  --muted: #5f584a;
-  --faint: #8b8271;
-  --opt-bg: #fffdf8;
-  --opt-text: #1e1b14;
-  --opt-sel: #ece5d5;
-  --glass-hover: rgba(40, 34, 22, 0.06);
-  --veil: rgba(244, 239, 228, 0.66);
-  --scrim: rgba(60, 52, 38, 0.36);
-}
-
-/* ---- Type ----
-   Playfair only above ~18px. Below that its thin strokes disappear and
-   its small apertures close up, which is why the card titles use Vollkorn
-   instead even though both are serifs. */
+/* ---- Type ---- */
 .page-head h1, .page-head h2, .dash-head h1, .splash-card h1, .greeting {
-  font-family: var(--display);
-  font-weight: 400;
-  letter-spacing: -0.005em;
+  font-family: var(--sans);
+  font-weight: 560;
+  letter-spacing: -0.018em;
   line-height: 1.18;
 }
 .page-head h2 { font-size: 30px; }
@@ -3572,24 +3401,21 @@ code, pre, .kbd { font-family: var(--mono); }
 h3, .settings-head h3, .ext-head h3, .card-title, .hub-card h4,
 .widget-card .card-title, .empty-widget .empty-title, .section-title,
 .path-prompt-title {
-  font-family: var(--serif);
-  font-weight: 600;
-  letter-spacing: 0;
+  font-family: var(--sans);
+  font-weight: 560;
+  letter-spacing: -0.014em;
 }
 .card-title { font-size: 14px; }
 .settings-head h3, .ext-head h3 { font-size: 17px; }
 
-/* Body copy is Vollkorn: long explanations are the reason to have a text
-   serif at all. Vollkorn runs small, so it needs a nudge in size and a
-   shorter measure than the sans did. */
 .msg-assistant, .msg-user, p.muted, .settings-card > p, .hub-card p,
 .help-body, .research-summary {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 15px;
   line-height: 1.62;
 }
 p.muted { max-width: 70ch; }
-.msg-assistant blockquote { font-family: var(--serif); font-style: italic; }
+.msg-assistant blockquote { font-family: var(--sans); font-style: italic; }
 
 /* Controls, labels, counters and anything tabular stay in the sans — a
    serif here costs legibility at 11-12px and buys nothing. */
@@ -3620,7 +3446,7 @@ td, th, .si-sub, .small, .editor-status {
 }
 .artifact-title {
   flex: 1;
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-weight: 600;
   font-size: 13.5px;
 }
@@ -3806,13 +3632,13 @@ td, th, .si-sub, .small, .editor-status {
   box-shadow: var(--shadow-lg);
 }
 .onboard-card h1 {
-  font-family: var(--display);
+  font-family: var(--sans);
   font-weight: 400;
   font-size: 34px;
   margin-bottom: 14px;
 }
 .onboard-card h2 {
-  font-family: var(--display);
+  font-family: var(--sans);
   font-weight: 400;
   font-size: 25px;
   margin-bottom: 18px;
@@ -3828,7 +3654,7 @@ td, th, .si-sub, .small, .editor-status {
 .onboard-skip:hover { color: var(--text); text-decoration: underline; }
 .onboard-step.hidden { display: none; }
 .onboard-lede {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 15.5px;
   line-height: 1.62;
   max-width: 60ch;
@@ -3853,14 +3679,14 @@ td, th, .si-sub, .small, .editor-status {
 .onboard-choice:hover { border-color: var(--accent-line); background: var(--card3); }
 .oc-title {
   display: block;
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-weight: 600;
   font-size: 16px;
   margin-bottom: 5px;
 }
 .oc-body {
   display: block;
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 13.5px;
   line-height: 1.55;
   color: var(--muted);
@@ -3879,7 +3705,7 @@ td, th, .si-sub, .small, .editor-status {
   text-transform: uppercase;
 }
 
-.onboard-prose { font-family: var(--serif); font-size: 14.5px; line-height: 1.66; max-width: 66ch; }
+.onboard-prose { font-family: var(--sans); font-size: 14.5px; line-height: 1.66; max-width: 66ch; }
 .onboard-prose p { margin-bottom: 12px; }
 .onboard-prose ul { margin: 0 0 14px 20px; }
 .onboard-prose li { margin-bottom: 8px; }

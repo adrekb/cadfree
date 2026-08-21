@@ -94,6 +94,20 @@ def test_survey_api_and_search_settings(tmp_path, monkeypatch):
     assert vis.json()["vision_models"]
 
 
+def test_ui_theme_is_always_dark(tmp_path, monkeypatch):
+    monkeypatch.setenv("CADFREE_HOME", str(tmp_path))
+    from cadfree.main import create_app
+    from cadfree.store.db import set_setting
+
+    client = TestClient(create_app())
+    set_setting("ui_theme", "light")
+    assert client.get("/api/config").json()["ui_theme"] == "dark"
+    assert client.put("/api/config/ui_theme", json="auto").json()["ok"] is True
+    assert client.get("/api/config").json()["ui_theme"] == "dark"
+    saved = client.post("/api/settings", json={"ui_theme": "light"})
+    assert saved.json()["ui_theme"] == "dark"
+
+
 def test_agent_tools_include_survey_and_search(tmp_path, monkeypatch):
     monkeypatch.setenv("CADFREE_HOME", str(tmp_path))
     from cadfree.agent import plugins as plug

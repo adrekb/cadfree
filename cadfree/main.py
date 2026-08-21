@@ -164,7 +164,7 @@ def create_app() -> FastAPI:
             cfg["search_api_key"] = ""
         else:
             cfg["search_api_key_set"] = False
-        cfg.setdefault("ui_theme", "auto")
+        cfg["ui_theme"] = "dark"
         cfg.setdefault("ui_accent", "carrot")
         cfg.setdefault("llm_provider", "openai")
         provider = cfg.get("llm_provider") or "openai"
@@ -178,7 +178,10 @@ def create_app() -> FastAPI:
 
     @app.put("/api/config/{key}")
     async def put_config(key: str, request: Request) -> dict[str, Any]:
-        set_setting(key, await request.json())
+        payload = await request.json()
+        if key == "ui_theme":
+            payload = "dark"
+        set_setting(key, payload)
         return {"ok": True}
 
     @app.post("/api/settings")
@@ -193,6 +196,8 @@ def create_app() -> FastAPI:
                 from cadfree.agent.providers import normalize_thinking
 
                 value = normalize_thinking(value)
+            if key == "ui_theme":
+                value = "dark"
             set_setting(key, value)
         return config()
 
