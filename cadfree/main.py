@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field
 from cadfree.agent.loop import run_turn
 from cadfree.agent.providers import llm_config
 from cadfree.agent.survey import list_pending, submit_answers
-from cadfree.agent.vision import default_model, list_attachments, load_images, save_attachment, vision_capable
+from cadfree.agent.vision import default_model, list_attachments, load_images, save_attachment, vision_capable, VISION_MODELS
 from cadfree.cad.assembly import (
+    assembly_scene,
     assembly_snapshot,
     compose_assembly_stl,
     ensure_default_part,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
             cfg["llm_model"] = default_model(provider)
         cfg.setdefault("llm_thinking", "high")
         cfg["vision"] = vision_capable(provider, cfg.get("llm_model") or "")
+        cfg["vision_models"] = VISION_MODELS
         cfg.setdefault("search_provider", "auto")
         return cfg
 
@@ -275,7 +277,6 @@ def create_app() -> FastAPI:
         from cadfree.cad.assembly import save_part_metrics
 
         save_part_metrics(project_id, part["id"], built.get("metrics") or {})
-        compose_assembly_stl(project_id)
         caps = _project_caps(json.loads(row["capability_ids"] or "[]"))
         constraints = json.loads(row["constraints"] or "{}")
         mesh = load_mesh(built["stl_path"])
@@ -295,24 +296,53 @@ def create_app() -> FastAPI:
             )
         built["feasibility"] = report
         built["metrics"] = metrics.to_dict()
-        built["stl_url"] = f"/api/projects/{project_id}/stl?t={_now()}"
+        built["stl_url"] = f"/api/projects/{project_id}/parts/{part['id']}/stl?t={_now()}"
+        built["scene_url"] = f"/api/projects/{project_id}/scene"
         built["assembly"] = assembly_snapshot(project_id)
         return built
 
     @app.get("/api/projects/{project_id}/stl")
-    def get_stl(project_id: str) -> FileResponse:
+    def get_stl(project_id: str, combined: bool = False) -> FileResponse:
         root = project_dir(project_id)
-        for path in (root / "assembly.stl", root / "model.stl"):
-            if path.is_file():
-                return FileResponse(path, media_type="model/stl", filename=path.name)
+        if combined:
+            composed = compose_assembly_stl(project_id)
+            if not composed.get("ok"):
+                raise HTTPException(400, composed.get("error") or "could not merge STL")
+            path = Path(composed["stl_path"]) if composed.get("stl_path") else None
+            if path and path.is_file():
+                return FileResponse(path, media_type="model/stl", filename="assembly.stl")
+            raise HTTPException(404, composed.get("note") or "no solids to merge")
         try:
             part = get_part(project_id, None)
             pth = part_dir(project_id, part["id"]) / "model.stl"
             if pth.is_file():
-                return FileResponse(pth, media_type="model/stl", filename="model.stl")
+                return FileResponse(pth, media_type="model/stl", filename=f"{part.get('name') or 'part'}.stl")
         except KeyError:
             pass
+        for path in (root / "model.stl",):
+            if path.is_file():
+                return FileResponse(path, media_type="model/stl", filename=path.name)
         raise HTTPException(404, "no STL yet — rebuild from the editor")
+
+    @app.get("/api/projects/{project_id}/parts/{part_id}/stl")
+    def get_part_stl(project_id: str, part_id: str) -> FileResponse:
+        try:
+            part = get_part(project_id, part_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        pth = part_dir(project_id, part["id"]) / "model.stl"
+        if not pth.is_file():
+            raise HTTPException(404, "rebuild this unique part first")
+        return FileResponse(pth, media_type="model/stl", filename=f"{part.get('name') or part_id}.stl")
+
+    @app.get("/api/projects/{project_id}/scene")
+    def get_scene(project_id: str) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        ensure_default_part(project_id)
+        return assembly_scene(project_id)
 
     @app.get("/api/projects/{project_id}/assembly")
     def get_assembly(project_id: str) -> dict[str, Any]:

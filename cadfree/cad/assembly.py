@@ -1,11 +1,15 @@
 """Unique parts + placed instances. That is how large assemblies exist.
 
 Forty copies of a bracket are one CadQuery solid and a linear pattern, not
-forty scripts. Fasteners can be purchased BOM lines with no solid.
+forty scripts. The viewer draws each unique mesh once with GPU instances —
+it does not merge a giant STL. Fasteners can be purchased BOM lines with no
+solid. Nested parent_id patterns multiply (a patterned frame of patterned
+brackets).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import uuid
@@ -18,7 +22,22 @@ from cadfree.cad.params import STARTER_BRACKET, extract_params
 from cadfree.paths import project_dir
 from cadfree.store.db import db
 
-MAX_EXPANDED = 250
+# GPU instances, not concatenated meshes. CAD kernels work the same way.
+MAX_EXPANDED = 2000
+MAX_UNIQUE_PARTS = 48
+# Merged STL download only — preview never uses this path.
+MERGE_STL_CAP = 40
+PART_KINDS = ("part", "purchased", "fastener", "subassembly")
+_PALETTE = (
+    (0.96, 0.51, 0.25),
+    (0.45, 0.72, 0.89),
+    (0.55, 0.78, 0.45),
+    (0.90, 0.70, 0.30),
+    (0.70, 0.55, 0.90),
+    (0.95, 0.45, 0.50),
+    (0.40, 0.85, 0.75),
+    (0.85, 0.60, 0.40),
+)
 
 
 def _new_id() -> str:
@@ -39,11 +58,20 @@ def loc_dict(raw: Any) -> dict[str, float]:
             out[key] = float(raw.get(key) or 0)
         except (TypeError, ValueError):
             out[key] = 0.0
+    for key in ("sx", "sy", "sz"):
+        if raw.get(key) is None:
+            out[key] = 1.0
+            continue
+        try:
+            val = float(raw[key])
+        except (TypeError, ValueError):
+            val = 1.0
+        out[key] = 1.0 if val == 0 else val
     return out
 
 
 def loc_matrix(loc: dict[str, float]) -> np.ndarray:
-    """4x4: translation in mm, rx/ry/rz in degrees, applied Rx then Ry then Rz."""
+    """4x4: translation in mm, rx/ry/rz in degrees, optional sx/sy/sz (mirror = -1)."""
     loc = loc_dict(loc)
     rx, ry, rz = (math.radians(loc[k]) for k in ("rx", "ry", "rz"))
     cx, sx = math.cos(rx), math.sin(rx)
@@ -52,13 +80,23 @@ def loc_matrix(loc: dict[str, float]) -> np.ndarray:
     rx_m = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
     ry_m = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
     rz_m = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
-    r = rz_m @ ry_m @ rx_m
+    scale = np.diag([loc["sx"], loc["sy"], loc["sz"]])
+    r = rz_m @ ry_m @ rx_m @ scale
     m = np.eye(4)
     m[:3, :3] = r
     m[0, 3] = loc["x"]
     m[1, 3] = loc["y"]
     m[2, 3] = loc["z"]
     return m
+
+
+def matrix_colmajor(m: np.ndarray) -> list[float]:
+    return np.asarray(m, dtype=float).T.reshape(-1).tolist()
+
+
+def part_color(part_id: str) -> list[float]:
+    digest = hashlib.md5((part_id or "").encode("utf-8")).digest()
+    return list(_PALETTE[digest[0] % len(_PALETTE)])
 
 
 def expand_pattern(loc: dict[str, float], pattern: Any) -> list[dict[str, float]]:
@@ -121,18 +159,45 @@ def expand_pattern(loc: dict[str, float], pattern: Any) -> list[dict[str, float]
                 item["rz"] = loc["rz"] + math.degrees(ang)
             out.append(item)
         return out
+    if kind == "mirror":
+        axis = str(pattern.get("axis") or pattern.get("plane") or "x").lower()
+        at = float(pattern.get("at") or 0)
+        mirrored = dict(loc)
+        if axis in {"x", "yz"}:
+            mirrored["x"] = 2 * at - loc["x"]
+            mirrored["sx"] = -abs(loc.get("sx") or 1)
+        elif axis in {"y", "xz"}:
+            mirrored["y"] = 2 * at - loc["y"]
+            mirrored["sy"] = -abs(loc.get("sy") or 1)
+        else:
+            mirrored["z"] = 2 * at - loc["z"]
+            mirrored["sz"] = -abs(loc.get("sz") or 1)
+        return [loc, mirrored]
     return [loc]
 
 
 def expand_instances(instances: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expand patterns, then walk parent_id so a patterned parent multiplies children."""
     by_id = {i["id"]: i for i in instances if i.get("id")}
-    expanded: list[dict[str, Any]] = []
+    children: dict[str, list[dict[str, Any]]] = {}
+    roots: list[dict[str, Any]] = []
     for inst in instances:
+        parent_id = inst.get("parent_id") or ""
+        if parent_id and parent_id in by_id:
+            children.setdefault(parent_id, []).append(inst)
+        else:
+            roots.append(inst)
+
+    expanded: list[dict[str, Any]] = []
+
+    def walk(inst: dict[str, Any], parent_world: np.ndarray, ancestry: frozenset[str]) -> None:
+        iid = str(inst.get("id") or "")
+        if iid and iid in ancestry:
+            return
+        next_anc = ancestry | (frozenset([iid]) if iid else frozenset())
         origins = expand_pattern(inst.get("loc"), inst.get("pattern"))
-        parent = by_id.get(inst.get("parent_id") or "")
-        parent_m = loc_matrix(parent.get("loc") if parent else {})
         for idx, loc in enumerate(origins):
-            world = parent_m @ loc_matrix(loc)
+            world = parent_world @ loc_matrix(loc)
             expanded.append(
                 {
                     **inst,
@@ -146,13 +211,21 @@ def expand_instances(instances: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "rz": loc.get("rz", 0),
                     },
                     "matrix": world.tolist(),
+                    "matrix_colmajor": matrix_colmajor(world),
                 }
             )
-    if len(expanded) > MAX_EXPANDED:
-        raise ValueError(
-            f"Assembly expands to {len(expanded)} instances (cap {MAX_EXPANDED}). "
-            "Use fewer unique parts and patterns, not one body per copy."
-        )
+            if len(expanded) > MAX_EXPANDED:
+                raise ValueError(
+                    f"Assembly expands to more than {MAX_EXPANDED} instances. "
+                    "Use fewer unique parts and patterns, not one body per copy."
+                )
+            if iid:
+                for child in children.get(iid, []):
+                    walk(child, world, next_anc)
+
+    identity = np.eye(4)
+    for root in roots:
+        walk(root, identity, frozenset())
     return expanded
 
 
@@ -290,7 +363,12 @@ def upsert_part(
     material_id: str | None = None,
 ) -> dict[str, Any]:
     ensure_default_part(project_id)
-    kind = kind if kind in {"part", "purchased", "fastener"} else "part"
+    kind = kind if kind in PART_KINDS else "part"
+    if not part_id and len(list_parts(project_id)) >= MAX_UNIQUE_PARTS:
+        raise ValueError(
+            f"This project already has {MAX_UNIQUE_PARTS} unique parts. "
+            "Large assemblies are extra instances of those parts, not more scripts."
+        )
     if part_id:
         with db() as conn:
             row = conn.execute(
@@ -350,15 +428,24 @@ def place_instance(
     instance_id: str | None = None,
 ) -> dict[str, Any]:
     get_part(project_id, part_id)
-    existing = [i for i in list_instances(project_id) if i["id"] != instance_id]
-    n_new = len(expand_pattern(loc, pattern or {"kind": "none"}))
-    n_old = len(expand_instances(existing)) if existing else 0
-    if n_new + n_old > MAX_EXPANDED:
-        raise ValueError(
-            f"That pattern would make {n_new + n_old} instances (cap {MAX_EXPANDED})."
-        )
     loc_s = json.dumps(loc_dict(loc))
     pat = pattern or {"kind": "none"}
+    trial_id = instance_id or "trial"
+    trial = [i for i in list_instances(project_id) if i["id"] != instance_id]
+    trial.append(
+        {
+            "id": trial_id,
+            "part_id": part_id,
+            "name": name or part_id,
+            "parent_id": parent_id,
+            "loc": loc_dict(loc),
+            "pattern": pat,
+        }
+    )
+    try:
+        expand_instances(trial)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     if instance_id:
         with db() as conn:
             conn.execute(
@@ -396,18 +483,89 @@ def assembly_snapshot(project_id: str) -> dict[str, Any]:
     except ValueError as exc:
         expanded = []
         error = str(exc)
+    solids = [p for p in parts if p.get("kind") not in {"purchased", "fastener", "subassembly"}]
+    built = sum(1 for p in solids if (part_dir(project_id, p["id"]) / "model.stl").is_file())
     return {
         "parts": parts,
         "instances": instances,
         "expanded_count": len(expanded),
+        "unique_parts": len(parts),
+        "unique_solids": len(solids),
+        "built_solids": built,
+        "preview": "gpu-instances",
+        "cap": MAX_EXPANDED,
         "bom": bom_from_instances(parts, instances) if not error else [],
         "error": error,
         "active_part_id": get_part(project_id, None)["id"],
     }
 
 
+def assembly_scene(project_id: str) -> dict[str, Any]:
+    """Unique meshes + instance matrices for the WebGL viewer. No concatenated STL."""
+    snap = assembly_snapshot(project_id)
+    if snap.get("error"):
+        return {
+            "expanded_count": 0,
+            "draws": [],
+            "scene_parts": [],
+            "error": snap["error"],
+            "bom": [],
+            "preview": "gpu-instances",
+            "cap": MAX_EXPANDED,
+        }
+    instances = list_instances(project_id)
+    expanded = expand_instances(instances)
+    parts = {p["id"]: p for p in list_parts(project_id)}
+    scene_parts = []
+    for part in parts.values():
+        kind = part.get("kind") or "part"
+        stl = part_dir(project_id, part["id"]) / "model.stl"
+        has = stl.is_file() and kind not in {"purchased", "fastener", "subassembly"}
+        scene_parts.append(
+            {
+                "id": part["id"],
+                "name": part.get("name") or part["id"],
+                "kind": kind,
+                "color": part_color(part["id"]),
+                "stl_url": (
+                    f"/api/projects/{project_id}/parts/{part['id']}/stl" if has else None
+                ),
+            }
+        )
+    draws = []
+    for inst in expanded:
+        part = parts.get(inst.get("part_id") or "")
+        if not part or (part.get("kind") or "part") in {"purchased", "fastener", "subassembly"}:
+            continue
+        stl = part_dir(project_id, part["id"]) / "model.stl"
+        if not stl.is_file():
+            continue
+        draws.append(
+            {
+                "part_id": part["id"],
+                "instance_id": inst.get("id"),
+                "index": inst.get("index") or 0,
+                "matrix": inst["matrix_colmajor"],
+            }
+        )
+    return {
+        "expanded_count": snap["expanded_count"],
+        "unique_parts": snap["unique_parts"],
+        "unique_solids": snap["unique_solids"],
+        "built_solids": snap["built_solids"],
+        "bom": snap["bom"],
+        "error": snap["error"],
+        "active_part_id": snap["active_part_id"],
+        "preview": "gpu-instances",
+        "cap": MAX_EXPANDED,
+        "scene_parts": scene_parts,
+        "draws": draws,
+        "draw_count": len(draws),
+    }
+
+
 def compose_assembly_stl(project_id: str) -> dict[str, Any]:
-    """Merge placed part STLs with trimesh. No CadQuery required at compose time."""
+    """Optional merged STL for CAM download. Preview uses assembly_scene instead."""
     snap = assembly_snapshot(project_id)
     if snap.get("error"):
         return {"ok": False, "error": snap["error"]}
@@ -444,6 +602,17 @@ def compose_assembly_stl(project_id: str) -> dict[str, Any]:
     out = project_dir(project_id) / "assembly.stl"
     if not meshes:
         return {"ok": True, "stl_path": None, "bodies": 0, "note": "No solids to merge (BOM-only / purchased)."}
+    if len(meshes) > MERGE_STL_CAP:
+        return {
+            "ok": False,
+            "error": (
+                f"Merged STL is limited to {MERGE_STL_CAP} bodies so we do not "
+                "build a giant mesh. The studio preview instances unique parts "
+                f"({len(expanded)} placements). Download each part STL instead."
+            ),
+            "expanded": len(expanded),
+            "bodies": len(meshes),
+        }
     combined = trimesh.util.concatenate(meshes)
     combined.export(str(out))
     extents = combined.extents.tolist() if hasattr(combined, "extents") else [0, 0, 0]

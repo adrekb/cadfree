@@ -207,7 +207,7 @@ async function loadStudio(id) {
         questions: s.questions,
     }));
     document.getElementById('stl-download').href = '/api/projects/' + id + '/stl';
-    if (window.cadfreeViewer) window.cadfreeViewer.load('/api/projects/' + id + '/stl?t=' + Date.now());
+    refreshViewer(id);
 }
 
 function renderParts(assembly) {
@@ -224,7 +224,9 @@ function renderParts(assembly) {
     const chips = parts.map(p =>
         `<button class="part-chip ${p.id === active ? 'on' : ''}" onclick="selectPart('${p.id}')">${escHtml(p.name)}</button>`
     ).join('');
-    const bomTxt = n > 1 ? `<span class="muted small">${n} instances · ${bom.map(b => b.qty + '× ' + b.name).join(', ')}</span>` : '';
+    const bomTxt = n > 1
+        ? `<span class="muted small">${n} instances · ${assembly.unique_parts || parts.length} unique · ${bom.map(b => b.qty + '× ' + b.name).join(', ')}</span>`
+        : '';
     host.innerHTML = chips + bomTxt;
 }
 
@@ -317,8 +319,9 @@ async function rebuildNow() {
     }
     renderParams(built.params || {});
     renderFeasibility(built.feasibility || {});
-    document.getElementById('stl-download').href = built.stl_url || ('/api/projects/' + currentProjectId + '/stl');
-    if (window.cadfreeViewer) window.cadfreeViewer.load(built.stl_url);
+    renderParts(built.assembly || {});
+    document.getElementById('stl-download').href = '/api/projects/' + currentProjectId + '/stl';
+    refreshViewer(currentProjectId);
 }
 
 function renderFeasibility(report) {
@@ -355,11 +358,30 @@ function appendMsg(role, text, cls) {
     return div;
 }
 
+function refreshViewer(id) {
+    const pid = id || currentProjectId;
+    if (!pid) return;
+    let n = 0;
+    const apply = () => {
+        if (!window.cadfreeViewer || !window.cadfreeViewer.loadScene) return false;
+        fetch('/api/projects/' + pid + '/scene?t=' + Date.now())
+            .then((r) => r.json())
+            .then((scene) => window.cadfreeViewer.loadScene(scene))
+            .catch(() => {});
+        return true;
+    };
+    const tryLoad = () => {
+        if (apply() || n++ > 20) return;
+        setTimeout(tryLoad, 50);
+    };
+    tryLoad();
+}
+
 function thinkHint(level) {
     return {
         off: 'Thinking off. Fastest; weaker CadQuery on hard parts.',
         low: 'Think low — short chain-of-thought.',
-        high: 'Think high — DeepSeek default for agent work (standards + CadQuery).',
+        high: 'Think high — default for agent work (standards + CadQuery).',
         max: 'Think max — slowest and spendiest. Best shot at a hard parametric part.',
     }[level] || '';
 }
@@ -383,8 +405,9 @@ function onProviderChange() {
         deepseek: 'deepseek-v4-pro',
         openrouter: 'openai/gpt-4.1',
         ollama: 'llama3.2',
+        custom: 'gpt-4.1',
     };
-    if (!model.value.trim() && defaults[p]) model.value = defaults[p];
+    if (defaults[p]) model.value = defaults[p];
 }
 
 async function saveThinkingLevel() {
@@ -548,6 +571,7 @@ async function sendChatText(text) {
     if (agentStreaming) return;
     await saveSource();
     appendMsg('you', text);
+    const attachmentIds = pendingAttachments.map(a => a.id);
     pendingAttachments = [];
     renderAttachPreview();
     agentStreaming = true;
@@ -559,7 +583,7 @@ async function sendChatText(text) {
             body: JSON.stringify({
                 content: text,
                 mode: coderMode,
-                attachment_ids: pendingAttachments.map(a => a.id),
+                attachment_ids: attachmentIds,
             }),
         });
         const reader = resp.body.getReader();
@@ -594,9 +618,9 @@ async function sendChatText(text) {
                     const label = (r.ok ? 'read ' : 'could not read ') + (r.url || '');
                     appendMsg('search', label + (r.paywalled ? ' (paywalled)' : ''), 'tool');
                 } else if (ev.type === 'tool_result' && ev.name === 'build_model' && ev.result && ev.result.ok) {
-                    if (window.cadfreeViewer) {
-                        window.cadfreeViewer.load('/api/projects/' + currentProjectId + '/stl?t=' + Date.now());
-                    }
+                    refreshViewer(currentProjectId);
+                } else if (ev.type === 'tool_result' && (ev.name === 'place_instance' || ev.name === 'upsert_part')) {
+                    refreshViewer(currentProjectId);
                 } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
                     renderFeasibility(ev.result || {});
                 } else if (ev.type === 'error') {

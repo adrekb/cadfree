@@ -191,7 +191,18 @@
           <option value="ollama">Ollama (local)</option>
           <option value="custom">OpenAI-compatible</option>
         </select>
-        <input id="llm-model" placeholder="model id — e.g. deepseek-v4-pro">
+        <input id="llm-model" list="vision-models" placeholder="model id — e.g. gpt-4.1">
+        <datalist id="vision-models">
+          <option value="gpt-4.1">OpenAI GPT-4.1 (vision)</option>
+          <option value="gpt-4o">OpenAI GPT-4o (vision)</option>
+          <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (vision)</option>
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash (vision)</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro (vision)</option>
+          <option value="openai/gpt-4.1">OpenRouter GPT-4.1</option>
+          <option value="google/gemini-2.5-flash">OpenRouter Gemini</option>
+          <option value="anthropic/claude-sonnet-4-5">OpenRouter Claude</option>
+          <option value="deepseek-v4-pro">DeepSeek V4 Pro (text only)</option>
+        </datalist>
       </div>
       <div class="settings-row">
         <select id="llm-thinking" onchange="syncThinkSelect(this.value)">
@@ -248,9 +259,9 @@
       <h3>Standards search</h3>
       <p>ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, and manufacturer datasheets are searched on the public web, ranked with standards bodies first. The agent cites the URL. If the document is a paid PDF, it says so and does not invent clause numbers. Optional Brave Search key is in Settings.</p>
       <h3>DeepSeek V4 Pro</h3>
-      <p>DeepSeek is text-only — it cannot read a drawing or a photo of a part. For that, use <b>OpenAI, Anthropic, Gemini, or an OpenRouter vision model</b> and attach the image in chat. Thinking levels still work on DeepSeek for text agent work.</p>
+      <p>DeepSeek is text-only — it cannot read a drawing or a photo of a part. Drawings need a <b>vision-native</b> model: OpenAI GPT-4.1 / GPT-4o, Anthropic Claude, Gemini 2.5, or an OpenRouter vision model. Attach the image in chat. Thinking levels still work on DeepSeek for text-only agent work.</p>
       <h3>Large assemblies</h3>
-      <p>Not one giant CadQuery file. Unique parts in the tree, then instances with a linear / grid / circular pattern (cap 250 expanded copies). Fasteners are BOM lines with no solid. Rebuild composes an assembly STL from placed parts.</p>
+      <p>Not one giant CadQuery file and not a merged mega-STL. Unique parts (up to 48 CadQuery solids) are tessellated once. Instances carry a transform + linear / grid / circular / mirror pattern. Nested <code>parent_id</code> multiplies children — a patterned frame of patterned brackets. The viewer GPU-instances those meshes (cap 2000 placements). Fasteners are BOM lines with no solid. STL download is the active unique part, not a boolean of the whole assembly.</p>
     </div>
   </section>
 </main>

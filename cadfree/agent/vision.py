@@ -18,15 +18,26 @@ ALLOWED_MIME = {
     "image/gif",
 }
 MAX_BYTES = 8 * 1024 * 1024
+OLLAMA_VISION = ("vision", "llava", "minicpm-v", "qwen2.5vl", "qwen2-vl", "moondream", "gemma3")
+VISION_MODELS = [
+    {"provider": "openai", "id": "gpt-4.1", "label": "OpenAI GPT-4.1"},
+    {"provider": "openai", "id": "gpt-4o", "label": "OpenAI GPT-4o"},
+    {"provider": "anthropic", "id": "claude-sonnet-4-5", "label": "Claude Sonnet 4.5"},
+    {"provider": "gemini", "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+    {"provider": "gemini", "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro"},
+    {"provider": "openrouter", "id": "openai/gpt-4.1", "label": "OpenRouter GPT-4.1"},
+    {"provider": "openrouter", "id": "google/gemini-2.5-flash", "label": "OpenRouter Gemini Flash"},
+    {"provider": "openrouter", "id": "anthropic/claude-sonnet-4-5", "label": "OpenRouter Claude"},
+]
 
 
 def vision_capable(provider: str, model: str = "") -> bool:
     p = (provider or "").lower()
     m = (model or "").lower()
-    if p in {"deepseek", "ollama"}:
+    if p == "deepseek" or "deepseek" in m:
         return False
-    if "deepseek" in m:
-        return False
+    if p == "ollama":
+        return any(token in m for token in OLLAMA_VISION)
     return p in {"openai", "anthropic", "gemini", "openrouter", "custom"}
 
 

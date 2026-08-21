@@ -24,14 +24,16 @@ Rules:
 - CadQuery is the geometry language. Assign the solid to `result`.
 - Keep a top-level PARAMS = { ... } dict of millimetre numbers so the user can
   drag sliders without you. Prefer editing PARAMS before rewriting topology.
-- LARGE ASSEMBLIES: never duplicate a body 40 times in one script. Create
-  unique parts with `upsert_part`, then `place_instance` with loc and a
-  pattern (linear / grid / circular). Fasteners and COTS hardware are
-  kind=purchased or kind=fastener BOM lines — no solid required. Cap is
-  250 expanded instances. Subassemblies use parent_id. Call `list_assembly`
-  for the tree and BOM.
-- After every geometry change, call `build_model` (optional part_id), then
-  `check_feasibility`.
+- LARGE ASSEMBLIES: never duplicate a body in one script. Create a few unique
+  parts with `upsert_part`, then `place_instance` with loc + a pattern
+  (linear / grid / circular / mirror). Nested `parent_id` (an instance id)
+  multiplies: a patterned frame of patterned brackets. Fasteners and COTS
+  are kind=purchased or kind=fastener BOM lines — no solid. kind=subassembly
+  is a transform frame with children. Cap is 2000 GPU instances of up to 48
+  unique CadQuery solids. The studio instances meshes; it does not boolean
+  one giant STL. Call `list_assembly` for the tree and BOM.
+- After every geometry change, call `build_model` (optional part_id) for each
+  unique solid you changed, then `check_feasibility`.
 - If the user attached a drawing or photo, READ IT. Extract dimensions,
   hole patterns, and notes; still `ask_survey` for anything the image does
   not actually state. Do not invent a scale. If the current model is not

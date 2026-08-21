@@ -1,9 +1,9 @@
-/** Minimal STL + orbit viewer so Cadfree does not depend on Three's Controls class. */
+/** Instanced STL viewer: unique meshes drawn N times. No Three.js. */
 
 const canvas = document.getElementById('cad-canvas');
 const gl = canvas.getContext('webgl');
 if (!gl) {
-    window.cadfreeViewer = { load() {} };
+    window.cadfreeViewer = { load() {}, loadScene() {} };
 } else {
     const vs = `
       attribute vec3 aPos; attribute vec3 aNrm;
@@ -16,11 +16,11 @@ if (!gl) {
     const fs = `
       precision mediump float;
       varying vec3 vN;
+      uniform vec3 uColor;
       void main() {
         vec3 n = normalize(vN);
         float l = 0.35 + 0.65 * max(dot(n, normalize(vec3(0.4, 0.9, 0.3))), 0.0);
-        gl_FragColor = vec4(0.957, 0.506, 0.247 * 0 + 0.247, 1.0) * vec4(l, l, l, 1.0);
-        gl_FragColor.rgb = vec3(0.96, 0.51, 0.25) * l + vec3(0.08, 0.09, 0.12);
+        gl_FragColor = vec4(uColor * l + vec3(0.08, 0.09, 0.12), 1.0);
       }`;
 
     function compile(type, src) {
@@ -38,14 +38,19 @@ if (!gl) {
     const aNrm = gl.getAttribLocation(prog, 'aNrm');
     const uMVP = gl.getUniformLocation(prog, 'uMVP');
     const uN = gl.getUniformLocation(prog, 'uN');
-    const vbo = gl.createBuffer();
-    let vertCount = 0;
+    const uColor = gl.getUniformLocation(prog, 'uColor');
+
+    const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let meshes = {};
+    let draws = [];
     let radius = 80;
     let yaw = 0.7;
     let pitch = 0.5;
+    let target = [0, 0, 0];
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
+    let loadGen = 0;
 
     canvas.addEventListener('pointerdown', (e) => {
         dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId);
@@ -92,6 +97,13 @@ if (!gl) {
         }
         return o;
     }
+    function transformPoint(m, p) {
+        return [
+            m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+            m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+            m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14],
+        ];
+    }
     function perspective(fovy, aspect, near, far) {
         const f = 1 / Math.tan(fovy / 2);
         const m = new Float32Array(16);
@@ -99,9 +111,12 @@ if (!gl) {
         m[14] = (2 * far * near) / (near - far);
         return m;
     }
-    function lookAt(eye) {
-        const z = normalize(eye);
-        const x = normalize(cross([0, 1, 0], z));
+    function lookAt(eye, center) {
+        const z = normalize([eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]]);
+        let x = normalize(cross([0, 1, 0], z));
+        if (!isFinite(x[0]) || Math.hypot(x[0], x[1], x[2]) < 1e-6) {
+            x = normalize(cross([1, 0, 0], z));
+        }
         const y = cross(z, x);
         const m = new Float32Array(16);
         m[0] = x[0]; m[1] = y[0]; m[2] = z[0];
@@ -119,32 +134,92 @@ if (!gl) {
     }
     function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
+    function meshFromStl(buffer, color) {
+        const parsed = parseStl(buffer);
+        const vertCount = parsed.positions.length / 3;
+        const interleaved = new Float32Array(vertCount * 6);
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        for (let i = 0; i < vertCount; i++) {
+            const x = parsed.positions[i * 3];
+            const y = parsed.positions[i * 3 + 1];
+            const z = parsed.positions[i * 3 + 2];
+            interleaved[i * 6] = x; interleaved[i * 6 + 1] = y; interleaved[i * 6 + 2] = z;
+            interleaved[i * 6 + 3] = parsed.normals[i * 3];
+            interleaved[i * 6 + 4] = parsed.normals[i * 3 + 1];
+            interleaved[i * 6 + 5] = parsed.normals[i * 3 + 2];
+            minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+            maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+        }
+        const vbo = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, interleaved, gl.STATIC_DRAW);
+        return {
+            vbo,
+            count: vertCount,
+            color: color || [0.96, 0.51, 0.25],
+            bbox: [[minX, minY, minZ], [maxX, maxY, maxZ]],
+        };
+    }
+
+    function fitCamera() {
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        let any = false;
+        for (const d of draws) {
+            const mesh = meshes[d.part_id];
+            if (!mesh || !mesh.bbox) continue;
+            const m = d.matrix;
+            const a = mesh.bbox[0];
+            const b = mesh.bbox[1];
+            for (const x of [a[0], b[0]]) {
+                for (const y of [a[1], b[1]]) {
+                    for (const z of [a[2], b[2]]) {
+                        const p = transformPoint(m, [x, y, z]);
+                        minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]); minZ = Math.min(minZ, p[2]);
+                        maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]); maxZ = Math.max(maxZ, p[2]);
+                        any = true;
+                    }
+                }
+            }
+        }
+        if (!any) {
+            target = [0, 0, 0];
+            radius = 80;
+            return;
+        }
+        target = [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2];
+        radius = Math.max(8, Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) * 1.3);
+    }
+
     function load(url) {
-        fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.arrayBuffer(); })
-            .then((buf) => {
-                const mesh = parseStl(buf);
-                vertCount = mesh.positions.length / 3;
-                const interleaved = new Float32Array(vertCount * 6);
-                let cx = 0, cy = 0, cz = 0;
-                for (let i = 0; i < vertCount; i++) {
-                    cx += mesh.positions[i * 3]; cy += mesh.positions[i * 3 + 1]; cz += mesh.positions[i * 3 + 2];
-                }
-                cx /= vertCount; cy /= vertCount; cz /= vertCount;
-                let maxR = 1;
-                for (let i = 0; i < vertCount; i++) {
-                    const x = mesh.positions[i * 3] - cx;
-                    const y = mesh.positions[i * 3 + 1] - cy;
-                    const z = mesh.positions[i * 3 + 2] - cz;
-                    interleaved[i * 6] = x; interleaved[i * 6 + 1] = y; interleaved[i * 6 + 2] = z;
-                    interleaved[i * 6 + 3] = mesh.normals[i * 3];
-                    interleaved[i * 6 + 4] = mesh.normals[i * 3 + 1];
-                    interleaved[i * 6 + 5] = mesh.normals[i * 3 + 2];
-                    maxR = Math.max(maxR, Math.hypot(x, y, z));
-                }
-                radius = maxR * 2.6;
-                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, interleaved, gl.STATIC_DRAW);
-            }).catch(() => { vertCount = 0; });
+        loadScene({
+            scene_parts: [{ id: 'one', stl_url: url, color: [0.96, 0.51, 0.25] }],
+            draws: [{ part_id: 'one', matrix: Array.from(IDENTITY) }],
+        });
+    }
+
+    function loadScene(scene) {
+        const gen = ++loadGen;
+        const parts = scene.scene_parts || scene.parts || [];
+        draws = (scene.draws || []).map((d) => ({
+            part_id: d.part_id,
+            matrix: new Float32Array(d.matrix && d.matrix.length === 16 ? d.matrix : IDENTITY),
+        }));
+        const needed = {};
+        parts.forEach((p) => { if (p.stl_url) needed[p.id] = p; });
+        draws.forEach((d) => { if (!needed[d.part_id]) { /* skip */ } });
+        const jobs = Object.values(needed).map((p) =>
+            fetch(p.stl_url).then((r) => { if (!r.ok) throw new Error(); return r.arrayBuffer(); })
+                .then((buf) => ({ id: p.id, mesh: meshFromStl(buf, p.color) }))
+                .catch(() => null)
+        );
+        Promise.all(jobs).then((loaded) => {
+            if (gen !== loadGen) return;
+            meshes = {};
+            loaded.forEach((item) => { if (item) meshes[item.id] = item.mesh; });
+            fitCamera();
+        });
     }
 
     function tick() {
@@ -157,25 +232,31 @@ if (!gl) {
         gl.clearColor(0.07, 0.08, 0.1, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.enable(gl.DEPTH_TEST);
-        if (vertCount) {
-            const eye = [
-                radius * Math.cos(pitch) * Math.sin(yaw),
-                radius * Math.sin(pitch),
-                radius * Math.cos(pitch) * Math.cos(yaw),
-            ];
-            const mvp = matMul(perspective(0.7, w / h, 0.5, radius * 20), lookAt(eye));
-            gl.useProgram(prog);
+        const eye = [
+            target[0] + radius * Math.cos(pitch) * Math.sin(yaw),
+            target[1] + radius * Math.sin(pitch),
+            target[2] + radius * Math.cos(pitch) * Math.cos(yaw),
+        ];
+        const view = lookAt(eye, target);
+        const projView = matMul(perspective(0.7, w / h, Math.max(0.5, radius * 0.02), radius * 40), view);
+        gl.useProgram(prog);
+        for (const d of draws) {
+            const mesh = meshes[d.part_id];
+            if (!mesh || !mesh.count) continue;
+            const mvp = matMul(projView, d.matrix);
+            const nmat = matMul(view, d.matrix);
             gl.uniformMatrix4fv(uMVP, false, mvp);
-            gl.uniformMatrix4fv(uN, false, lookAt(eye));
-            gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+            gl.uniformMatrix4fv(uN, false, nmat);
+            gl.uniform3fv(uColor, mesh.color);
+            gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
             gl.enableVertexAttribArray(aPos);
             gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 24, 0);
             gl.enableVertexAttribArray(aNrm);
             gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 24, 12);
-            gl.drawArrays(gl.TRIANGLES, 0, vertCount);
+            gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
         }
         requestAnimationFrame(tick);
     }
     tick();
-    window.cadfreeViewer = { load };
+    window.cadfreeViewer = { load, loadScene };
 }

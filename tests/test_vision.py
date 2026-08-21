@@ -14,7 +14,10 @@ def test_vision_capable_providers():
     assert vision_capable("openrouter", "openai/gpt-4.1") is True
     assert vision_capable("deepseek", "deepseek-v4-pro") is False
     assert vision_capable("openai", "deepseek-v4-pro") is False
+    assert vision_capable("ollama", "llama3.2") is False
+    assert vision_capable("ollama", "llama3.2-vision") is True
     assert default_model("gemini") == "gemini-2.5-flash"
+    assert default_model("openai") == "gpt-4.1"
 
 
 def test_openai_keeps_images_for_vision_models():

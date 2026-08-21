@@ -34,6 +34,11 @@ def test_workshop_and_project(tmp_path, monkeypatch):
     assert client.get("/").status_code == 200
     assert project.json()["pending_surveys"] == []
     assert project.json()["assembly"]["parts"]
+    assert project.json()["assembly"]["preview"] == "gpu-instances"
+    scene = client.get("/api/projects/" + created.json()["id"] + "/scene")
+    assert scene.status_code == 200
+    assert scene.json()["preview"] == "gpu-instances"
+    assert "draws" in scene.json()
 
 
 def test_survey_api_and_search_settings(tmp_path, monkeypatch):
@@ -79,6 +84,14 @@ def test_survey_api_and_search_settings(tmp_path, monkeypatch):
     )
     assert think.json()["llm_thinking"] == "max"
     assert think.json()["llm_model"] == "deepseek-v4-pro"
+    assert think.json()["vision"] is False
+
+    vis = client.post(
+        "/api/settings",
+        json={"llm_provider": "gemini", "llm_model": "gemini-2.5-flash"},
+    )
+    assert vis.json()["vision"] is True
+    assert vis.json()["vision_models"]
 
 
 def test_agent_tools_include_survey_and_search(tmp_path, monkeypatch):

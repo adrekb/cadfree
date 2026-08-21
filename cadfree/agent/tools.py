@@ -7,7 +7,6 @@ from typing import Any
 from cadfree.agent.survey import create_survey, list_pending, normalize_questions
 from cadfree.cad.assembly import (
     assembly_snapshot,
-    compose_assembly_stl,
     ensure_default_part,
     get_part,
     part_dir,
@@ -148,8 +147,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         if built.get("ok"):
             save_part_metrics(project_id, part["id"], built.get("metrics") or {})
             _save_build(project_id, built)
-            composed = compose_assembly_stl(project_id)
-            built["assembly"] = {k: v for k, v in composed.items() if k != "stl_path"}
+            built["assembly"] = assembly_snapshot(project_id)
+            built["scene_url"] = f"/api/projects/{project_id}/scene"
         out = {k: v for k, v in built.items() if k != "stl_path"}
         out["part_id"] = part["id"]
         return out
@@ -232,9 +231,12 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         return assembly_snapshot(project_id)
 
     def upsert(name: str, source: str = "", part_id: str | None = None, kind: str = "part", material_id: str | None = None) -> dict[str, Any]:
-        part = upsert_part(
-            project_id, name=name, source=source, part_id=part_id, kind=kind, material_id=material_id
-        )
+        try:
+            part = upsert_part(
+                project_id, name=name, source=source, part_id=part_id, kind=kind, material_id=material_id
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
         return {"ok": True, "part": part}
 
     def place(part_id: str, name: str = "", loc: dict[str, Any] | None = None, pattern: dict[str, Any] | None = None, parent_id: str | None = None, instance_id: str | None = None) -> dict[str, Any]:

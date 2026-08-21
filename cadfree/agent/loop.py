@@ -82,14 +82,15 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "upsert_part",
-            "Create or update a unique part. kind: part | purchased | fastener. Purchased/fastener need no CadQuery.",
+            "Create or update a unique part. kind: part | purchased | fastener | subassembly. "
+            "Purchased/fastener/subassembly need no CadQuery. Large assemblies reuse these, they do not add more scripts.",
             {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
                     "source": {"type": "string"},
                     "part_id": {"type": "string"},
-                    "kind": {"type": "string", "enum": ["part", "purchased", "fastener"]},
+                    "kind": {"type": "string", "enum": ["part", "purchased", "fastener", "subassembly"]},
                     "material_id": {"type": "string"},
                 },
                 "required": ["name"],
@@ -100,8 +101,9 @@ def _bind_tools(project_id: str) -> None:
         Tool(
             "place_instance",
             "Place a part in the assembly. loc is mm + degrees {x,y,z,rx,ry,rz}. "
-            "pattern: {kind: none|linear|grid|circular, count, dx, dy, dz, nx, ny, radius, axis}. "
-            "This is how you get large assemblies (e.g. 8×6 grid of a unique bracket).",
+            "pattern: {kind: none|linear|grid|circular|mirror, count, dx, dy, dz, nx, ny, nz, radius, axis, at}. "
+            "parent_id is another INSTANCE id — a patterned parent multiplies children "
+            "(e.g. 12 bays × 4 brackets). This is how large assemblies exist. Cap 2000 GPU instances.",
             {
                 "type": "object",
                 "properties": {
@@ -197,7 +199,8 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "build_model",
-            "Run CadQuery for a part (optional part_id), export STL, then compose the assembly preview.",
+            "Run CadQuery for one unique part (optional part_id) and export its STL. "
+            "The viewer instances that mesh — it does not merge a giant assembly STL.",
             {
                 "type": "object",
                 "properties": {"part_id": {"type": "string"}},
