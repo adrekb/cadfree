@@ -41,7 +41,7 @@ from cadfree.kinematics.mechanism import (
     upsert_joint,
 )
 from cadfree.physics.book import lookup_formula
-from cadfree.physics.dispatch import run_solvers, solve_on_part
+from cadfree.physics.dispatch import probe_solvers, run_solvers, solve_on_part
 from cadfree.physics.topology import run_generate
 from cadfree.physics.engine import solve_formula
 from cadfree.store.db import db
@@ -159,6 +159,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "import": import_status(),
             "matlab": find_engine(),
             "simulation": sim_probe(),
+            "solvers": probe_solvers(),
         }
 
     def get_project() -> dict[str, Any]:
@@ -215,6 +216,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         part_id: str | None = None,
     ) -> dict[str, Any]:
         from cadfree.cad.optimize import optimize_params as _opt
+        from cadfree.physics.turbo import TURBO_PARAM_KEYS, optimize_turbo
 
         p = _row(project_id)
         ensure_default_part(project_id, p.get("cadquery_source") or "")
@@ -226,21 +228,36 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         if not stl.is_file():
             stl = work / "model.stl"
         metrics = _metrics(p, stl.parent) if stl.is_file() else _metrics(p, work)
-        if metrics is None:
-            return {
-                "ok": False,
-                "error": "Build the model before optimize_params. The loop scales the current mesh; it does not rebuild CadQuery per eval.",
-            }
         params = extract_params(part.get("cadquery_source") or p.get("cadquery_source") or "")
-        out = _opt(
-            metrics,
-            caps,
-            constraints,
-            params,
-            bounds=bounds,
-            goal=goal or "pareto",
-            max_evals=int(max_evals or 40),
-        )
+        goal_l = (goal or "pareto").strip().lower()
+        turboish = any(k in params for k in TURBO_PARAM_KEYS)
+        if goal_l in {"head", "hoop", "turbo"} or (turboish and goal_l == "pareto"):
+            from cadfree.physics.snapshot import write_si_status
+
+            status = write_si_status(project_id, part["id"])
+            out = optimize_turbo(
+                status,
+                params,
+                bounds=bounds,
+                goal="pareto" if goal_l in {"turbo", "pareto"} else goal_l,
+                max_evals=int(max_evals or 40),
+                extra=constraints,
+            )
+        else:
+            if metrics is None:
+                return {
+                    "ok": False,
+                    "error": "Build the model before optimize_params. The loop scales the current mesh; it does not rebuild CadQuery per eval.",
+                }
+            out = _opt(
+                metrics,
+                caps,
+                constraints,
+                params,
+                bounds=bounds,
+                goal=goal or "pareto",
+                max_evals=int(max_evals or 40),
+            )
         if apply and out.get("ok") and (out.get("winner") or {}).get("params"):
             winner = out["winner"]["params"]
             keys = set((out.get("bounds") or {}).keys()) or set(winner)
@@ -251,8 +268,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             out["params"] = extract_params(source)
             out["part_id"] = saved["id"]
             out["note"] = (
-                "PARAMS patched. Call build_model then check_feasibility. "
-                "CadQuery was not rebuilt inside the search. FEA is for verifying the winner."
+                "PARAMS patched. Call build_model then check_feasibility / run_solvers. "
+                "CadQuery was not rebuilt inside the search. FEA/OpenRadioss verify the winner."
             )
         else:
             out["applied"] = False
@@ -493,7 +510,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         elif questions:
             qs = normalize_questions(questions)
         else:
-            raise ValueError("ask_survey needs template=drone|load or a questions list")
+            raise ValueError("ask_survey needs template=drone|load|impeller or a questions list")
         if questions and tpl:
             qs = normalize_questions(questions)
         created = create_survey(project_id, title, qs)
@@ -695,6 +712,23 @@ def make_handlers(project_id: str) -> dict[str, Any]:
 
         return draft_from_image(project_id, attachment_id=attachment_id, part_id=part_id)
 
+    def draft_impeller(params: dict[str, Any] | None = None, part_id: str | None = None) -> dict[str, Any]:
+        from cadfree.cad.impeller import impeller_source
+
+        source = impeller_source(params)
+        part = _save_source(project_id, source, part_id)
+        return {
+            "ok": True,
+            "params": extract_params(source),
+            "part_id": part["id"],
+            "part": part.get("name"),
+            "disclaimer": (
+                "CadQuery impeller: backplate + hub + blades. Meanline β is from tangential. "
+                "Call ask_survey template=impeller, then build_model, then run_solvers pack=turbo. "
+                "Not a pump curve, not CFD."
+            ),
+        }
+
     return {
         "get_workshop": get_workshop,
         "get_project": get_project,
@@ -734,4 +768,5 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "list_cad_refs": cad_refs,
         "resolve_cad_ref": cad_ref,
         "draft_from_image": draft_image,
+        "draft_impeller": draft_impeller,
     }

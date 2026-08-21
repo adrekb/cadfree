@@ -16,6 +16,7 @@ from cadfree.physics.book import BY_ID, PACKS, lookup_formula
 from cadfree.physics.engine import solve_formula, sympy_status
 from cadfree.physics.fea import probe_fea, run_fea
 from cadfree.physics.fluids import probe_fluids, run_fluids
+from cadfree.physics.radioss import probe_radioss, run_radioss
 from cadfree.physics.snapshot import bind_formula, sim_dir, write_si_status
 from cadfree.physics.thermal import probe_thermal, run_thermal
 from cadfree.physics.topology import probe_generate, run_generate
@@ -25,14 +26,16 @@ from cadfree.kinematics.dynamics import probe_exudyn
 def probe_solvers() -> dict[str, Any]:
     fea = probe_fea()
     fluids = probe_fluids()
+    radioss = probe_radioss()
     return {
         "analytical": {
             "available": True,
-            "label": "Formula book (friction, fluids, aero, beams) on the SI snapshot",
+            "label": "Formula book (friction, fluids, aero, beams, turbo meanline) on the SI snapshot",
         },
         "sympy": sympy_status(),
         "fea": fea,
         "fluids": fluids,
+        "radioss": radioss,
         "thermal": probe_thermal(),
         "matlab": find_engine(),
         "kinematics": {
@@ -49,7 +52,8 @@ def probe_solvers() -> dict[str, Any]:
         "contract": (
             "CadQuery → SI status.json + part_si.stl copies → solvers → iterate PARAMS. "
             "Never invent a mesh or CFD result. Topology is packaged SIMP, not Fusion GD. "
-            "FEA default is C3D10; mesh-convergence is opt-in. Thermal is lumped + optional ccx heat."
+            "FEA default is C3D10; mesh-convergence is opt-in. Thermal is lumped + optional ccx heat. "
+            "pack=turbo is Euler/Wiesner meanline + CalculiX CENTRIF; OpenRadioss is explicit burst if installed."
         ),
     }
 
@@ -80,6 +84,10 @@ def run_analytical(
     status: dict[str, Any], extra: dict[str, Any] | None = None, pack: str | None = None
 ) -> dict[str, Any]:
     extra = extra or {}
+    if pack == "turbo":
+        from cadfree.physics.turbo import run_meanline
+
+        return run_meanline(status, extra)
     worksheets = []
     for fid in _analytical_ids(status, pack):
         formula = BY_ID[fid]
@@ -134,13 +142,20 @@ def run_solvers(
     part_id: str | None = None,
 ) -> dict[str, Any]:
     status = write_si_status(project_id, part_id)
+    extra = dict(values or {})
     if solvers:
         want = [s.lower().strip() for s in solvers]
     elif pack == "heat":
         want = ["analytical", "thermal"]
+    elif pack == "turbo":
+        want = ["analytical", "fea"]
     else:
         want = ["analytical", "fea", "fluids"]
-    extra = dict(values or {})
+    if pack == "turbo":
+        extra.setdefault("centrif", True)
+        extra["pack"] = "turbo"
+        if "fluids" in want or extra.get("mrf"):
+            extra.setdefault("mrf", True)
     results: list[dict[str, Any]] = []
     if "analytical" in want:
         results.append(run_analytical(status, extra, pack=pack))
@@ -150,6 +165,8 @@ def run_solvers(
         results.append(run_thermal(status, extra))
     if "fluids" in want or "cfd" in want or "aero" in want:
         results.append(run_fluids(status, extra))
+    if "radioss" in want or "openradioss" in want:
+        results.append(run_radioss(status, extra))
     if "dynamics" in want or "exudyn" in want:
         from cadfree.kinematics.dynamics import analyze_mechanism_dynamics
 

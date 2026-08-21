@@ -171,3 +171,47 @@ def test_thermal_solver_pack(tmp_path, monkeypatch):
     assert "thermal" in kinds
     assert "analytical" in kinds
 
+
+def test_turbo_pack_without_mesh_does_not_fake_fea(tmp_path, monkeypatch):
+    monkeypatch.setenv("CADFREE_HOME", str(tmp_path))
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from cadfree.cad.assembly import get_part, save_part_source
+    from cadfree.cad.impeller import STARTER_IMPELLER
+    from cadfree.main import create_app
+    from cadfree.store.db import db
+
+    client = TestClient(create_app())
+    pid = client.post("/api/projects", json={"name": "imp", "spec_text": "impeller"}).json()["id"]
+    with db() as conn:
+        conn.execute(
+            "UPDATE projects SET constraints = ? WHERE id = ?",
+            (
+                json.dumps(
+                    {
+                        "n_rpm": 3000,
+                        "Q_lpm": 60,
+                        "material_id": "petg",
+                        "fluid": "water",
+                        "target_H_m": 20,
+                    }
+                ),
+                pid,
+            ),
+        )
+    part = get_part(pid, None)
+    save_part_source(pid, part["id"], STARTER_IMPELLER)
+    body = client.post(f"/api/projects/{pid}/solvers", json={"pack": "turbo"}).json()
+    kinds = {r["kind"] for r in body["results"]}
+    assert "analytical" in kinds
+    assert "fea" in kinds
+    mean = next(r for r in body["results"] if r["kind"] == "analytical")
+    assert mean.get("solver") == "meanline" or mean.get("pack") == "turbo"
+    fea = next(r for r in body["results"] if r["kind"] == "fea")
+    assert fea["ok"] is False
+    assert "von_mises_max" not in fea or not fea.get("ok")
+    probe = client.get("/api/health").json()["solvers"]
+    assert "radioss" in probe
+    assert "turbo" in (probe.get("contract") or "")
