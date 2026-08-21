@@ -26,6 +26,7 @@ PLAN_BLOCKED = {
     "define_joint",
     "remove_joint",
     "generate_designs",
+    "commit_cots_kit",
 }
 
 
@@ -48,12 +49,14 @@ def _bind_tools(project_id: str) -> None:
             "ask_survey",
             "Ask the user a structured form (never guess). Pauses until they submit. "
             "Call this before writing CadQuery on a new spec. Types: choice, multi, number, text, bool. "
-            "Use constraint ids: load_n, load_lbf, load_direction, mounting, fastener, environment, "
-            "standard, safety_factor, max_mass_g, material_id, quantity.",
+            "You write the questions from the spec — there is no hidden drone (or bracket) script. "
+            "template=drone|load is only a shortcut for common ids. Constraint ids also include "
+            "speed_mph, budget_usd, range_km, payload_g, flight_min, vehicle_kind.",
             {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
+                    "template": {"type": "string", "enum": ["drone", "load"]},
                     "questions": {
                         "type": "array",
                         "items": {
@@ -74,7 +77,6 @@ def _bind_tools(project_id: str) -> None:
                         },
                     },
                 },
-                "required": ["questions"],
             },
             handlers["ask_survey"],
         ),
@@ -224,7 +226,8 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "lookup_formula",
-            "Search the SI formula book (friction, PV, wear, pipe, aero drag, beams). "
+            "Search the SI formula book (friction, PV, wear, pipe, aero drag, beams, "
+            "multirotor hover / T/W / first-order speed). "
             "Do not invent μ, C_d, or viscosity — use a book pair/fluid or ask_survey.",
             {
                 "type": "object",
@@ -274,7 +277,7 @@ def _bind_tools(project_id: str) -> None:
                     "values": {"type": "object"},
                     "pack": {
                         "type": "string",
-                        "enum": ["strength", "bushing", "aero", "pipe"],
+                        "enum": ["strength", "bushing", "aero", "pipe", "multirotor"],
                     },
                     "part_id": {"type": "string"},
                 },
@@ -314,16 +317,98 @@ def _bind_tools(project_id: str) -> None:
             mutating=True,
         ),
         Tool(
+            "score_vehicle",
+            "First-order 'does this speed/cost/range/payload close?' for a multirotor. "
+            "Class cost floors plus leftover-thrust vs drag. Not a propeller map, not live stock. "
+            "Optional — you can also lookup_formula / solve_formula. Call this when the user "
+            "named speed and budget; quote for_model if possible is false.",
+            {
+                "type": "object",
+                "properties": {
+                    "speed_mph": {"type": "number"},
+                    "budget_usd": {"type": "number"},
+                    "range_km": {"type": "number"},
+                    "payload_g": {"type": "number"},
+                    "flight_min": {"type": "number"},
+                    "vehicle_kind": {"type": "string"},
+                    "printed_frame": {"type": "boolean"},
+                    "cots_electronics": {"type": "boolean"},
+                },
+            },
+            handlers["score_vehicle"],
+        ),
+        Tool(
+            "search_parts",
+            "Find COTS parts: bundled street-typical catalog (motors, props, batteries, FC, ESC) "
+            "plus optional vendor web hits (intent=parts). Never claim live stock or a cart price "
+            "from a snippet. Pass role=motor|prop|battery|fc|esc and class_id when you know them.",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "role": {
+                        "type": "string",
+                        "enum": ["motor", "prop", "battery", "fc", "esc"],
+                    },
+                    "class_id": {"type": "string"},
+                    "budget_usd": {"type": "number"},
+                    "limit": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+            handlers["search_parts"],
+        ),
+        Tool(
+            "propose_vehicle",
+            "Optional shortcut: score the current constraints and suggest a typical catalog cart. "
+            "Not a required pipeline — you may score_vehicle, search_parts, and write_cadquery yourself.",
+            {
+                "type": "object",
+                "properties": {
+                    "speed_mph": {"type": "number"},
+                    "budget_usd": {"type": "number"},
+                    "range_km": {"type": "number"},
+                    "payload_g": {"type": "number"},
+                    "flight_min": {"type": "number"},
+                    "vehicle_kind": {"type": "string"},
+                },
+            },
+            handlers["propose_vehicle"],
+        ),
+        Tool(
+            "commit_cots_kit",
+            "Optional helper: stamp purchased BOM lines from catalog ids and hole a printable "
+            "X-frame PARAMS around those envelopes (motor PCD, FC square, battery tray). "
+            "You may write_cadquery instead. Electronics stay kind=purchased — do not CadQuery a BLDC. "
+            "If score_vehicle said impossible, pass accept_alternative=true and the class_id the user picked.",
+            {
+                "type": "object",
+                "properties": {
+                    "class_id": {"type": "string"},
+                    "motor_id": {"type": "string"},
+                    "prop_id": {"type": "string"},
+                    "battery_id": {"type": "string"},
+                    "fc_id": {"type": "string"},
+                    "esc_id": {"type": "string"},
+                    "accept_alternative": {"type": "boolean"},
+                    "printed_frame": {"type": "boolean"},
+                },
+            },
+            handlers["commit_cots_kit"],
+            mutating=True,
+        ),
+        Tool(
             "search_standards",
             "Web search for ISO/ASTM/ASME/DIN/SAE/MIL-STD/NAS/IPC documents and manufacturer datasheets. "
-            "Ranks standards bodies first. Cite URLs; do not invent paywalled clauses.",
+            "intent=parts is hobby vendors (not live inventory). "
+            "Ranks standards bodies first for codes. Cite URLs; do not invent paywalled clauses.",
             {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
                     "intent": {
                         "type": "string",
-                        "enum": ["standards", "datasheet", "machine"],
+                        "enum": ["standards", "datasheet", "machine", "parts"],
                     },
                     "max_results": {"type": "integer"},
                 },

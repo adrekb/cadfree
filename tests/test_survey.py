@@ -89,3 +89,23 @@ def test_merge_answers_types(tmp_path, monkeypatch):
     assert out["standard"] == "ISO 4762"
     assert "notes" not in out
     assert out["survey"]["notes"] == "ignore"
+
+
+def test_merge_vehicle_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("CADFREE_HOME", str(tmp_path))
+    init_db()
+    with db() as conn:
+        conn.execute(
+            """INSERT INTO projects(id, name, spec_text, constraints, capability_ids,
+               cadquery_source, created_at, updated_at)
+               VALUES(?,?,?,?,?,?,datetime('now'),datetime('now'))""",
+            ("p3", "drone", "", "{}", "[]", ""),
+        )
+    out = merge_answers_into_project(
+        "p3",
+        {"speed_mph": "50", "budget_usd": "80", "printed_frame": "yes", "vehicle_kind": "quadcopter"},
+    )
+    assert out["speed_mph"] == 50.0
+    assert out["budget_usd"] == 80.0
+    assert out["printed_frame"] is True
+    assert out["vehicle_kind"] == "quadcopter"

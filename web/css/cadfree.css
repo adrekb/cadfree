@@ -342,6 +342,15 @@ h1, h2, h3, h4,
 }
 .solver-card .chip.ok { color: var(--green); }
 .solver-card .chip.no { color: var(--yellow); }
+.vehicle-card {
+  background: var(--card);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.vehicle-card.no { border-color: color-mix(in srgb, var(--yellow) 40%, transparent); }
+.vehicle-card .chip { margin-right: 8px; }
+.kit-bom { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
 .gen-volfrac {
   font-size: 12px;
   max-width: 110px;

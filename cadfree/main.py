@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from cadfree.agent.loop import run_turn
+from cadfree.agent.mcp import PROTOCOL as MCP_PROTOCOL, mcp_endpoint
 from cadfree.agent.providers import llm_config
 from cadfree.agent.survey import list_pending, submit_answers
 from cadfree.agent.vision import default_model, list_attachments, load_images, save_attachment, vision_capable, VISION_MODELS
@@ -163,8 +164,18 @@ def create_app() -> FastAPI:
             "matlab": find_engine(),
             "simulation": sim_probe(),
             "solvers": probe_solvers(),
+            "mcp": {
+                "protocol": MCP_PROTOCOL,
+                "endpoint": "/mcp",
+                "sessions": False,
+                "transport": "streamable-http",
+            },
             "llm": {k: (bool(v) if k == "api_key" else v) for k, v in llm_config().items()},
         }
+
+    @app.post("/mcp")
+    async def mcp(request: Request) -> Any:
+        return await mcp_endpoint(request)
 
     @app.get("/api/catalog")
     def catalog() -> dict[str, Any]:
@@ -704,7 +715,8 @@ def create_app() -> FastAPI:
         if body.mode == "plan":
             prefix = (
                 "[Plan mode: do not write CadQuery or run MATLAB. You MAY "
-                "ask_survey, search_standards, read_url, and list_assembly. "
+                "ask_survey, search_standards, search_parts, score_vehicle, "
+                "read_url, and list_assembly. "
                 "Propose geometry, process, and simulation rungs only.]\n\n"
             )
 

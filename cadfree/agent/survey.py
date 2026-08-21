@@ -162,7 +162,157 @@ CONSTRAINT_KEYS = {
     "quantity",
     "fastener",
     "mounting",
+    "speed_mph",
+    "range_km",
+    "budget_usd",
+    "payload_g",
+    "flight_min",
+    "vehicle_kind",
+    "printed_frame",
+    "cots_electronics",
+    "confirm_kit",
 }
+
+FLOAT_KEYS = {
+    "load_lbf",
+    "load_lb",
+    "load_n",
+    "load_kg",
+    "max_mass_g",
+    "safety_factor",
+    "infill",
+    "wall_mm",
+    "speed_mph",
+    "range_km",
+    "budget_usd",
+    "payload_g",
+    "flight_min",
+}
+
+BOOL_KEYS = {"printed_frame", "cots_electronics", "confirm_kit"}
+
+SURVEY_TEMPLATES: dict[str, dict[str, Any]] = {
+    "load": {
+        "title": "Before we design the part",
+        "questions": [
+            {
+                "id": "load_n",
+                "prompt": "What load must this hold?",
+                "type": "number",
+                "unit": "N",
+                "help": "Pounds are fine too — use load_lbf if that is how you think.",
+            },
+            {
+                "id": "load_direction",
+                "prompt": "How is that load applied?",
+                "type": "choice",
+                "options": ["hanging", "cantilever / shelf", "compression", "unknown"],
+            },
+            {
+                "id": "fastener",
+                "prompt": "What fasteners / holes?",
+                "type": "text",
+                "required": False,
+            },
+            {
+                "id": "environment",
+                "prompt": "Where does it live?",
+                "type": "choice",
+                "options": ["indoor dry", "outdoor", "hot / near motors", "unknown"],
+            },
+            {
+                "id": "max_mass_g",
+                "prompt": "Mass budget?",
+                "type": "number",
+                "unit": "g",
+                "required": False,
+            },
+        ],
+    },
+    "drone": {
+        "title": "Before we design a drone",
+        "questions": [
+            {
+                "id": "vehicle_kind",
+                "prompt": "What kind of drone?",
+                "type": "choice",
+                "options": ["quadcopter", "whoop", "long-range", "not sure"],
+            },
+            {
+                "id": "speed_mph",
+                "prompt": "How fast does it need to go?",
+                "type": "number",
+                "unit": "mph",
+                "help": "Cruise / what you actually want to fly, not a marketing top speed.",
+            },
+            {
+                "id": "budget_usd",
+                "prompt": "All-in parts budget?",
+                "type": "number",
+                "unit": "USD",
+                "help": "Motors, FC, ESC, battery, props, frame. Goggles/radio are extra.",
+            },
+            {
+                "id": "range_km",
+                "prompt": "How far from you?",
+                "type": "number",
+                "unit": "km",
+                "required": False,
+            },
+            {
+                "id": "payload_g",
+                "prompt": "Payload besides the airframe and kit?",
+                "type": "number",
+                "unit": "g",
+                "required": False,
+                "help": "Camera already on a whoop counts as zero extra. Action cam / lidar is payload.",
+            },
+            {
+                "id": "flight_min",
+                "prompt": "Hover / cruise time you need?",
+                "type": "number",
+                "unit": "min",
+                "required": False,
+            },
+            {
+                "id": "printed_frame",
+                "prompt": "Print the airframe on your workshop machines?",
+                "type": "bool",
+                "help": "Electronics stay off-the-shelf either way.",
+            },
+            {
+                "id": "cots_electronics",
+                "prompt": "Buy motors, FC, ESC, and battery instead of designing them?",
+                "type": "bool",
+                "help": "Yes. Cadfree does not wind a BLDC or lay out a flight controller.",
+            },
+        ],
+    },
+}
+
+
+def questions_for_template(name: str) -> dict[str, Any]:
+    key = (name or "").strip().lower()
+    if key not in SURVEY_TEMPLATES:
+        known = ", ".join(sorted(SURVEY_TEMPLATES))
+        raise ValueError(f"unknown survey template {name!r}. Known: {known}")
+    spec = SURVEY_TEMPLATES[key]
+    return {
+        "template": key,
+        "title": spec["title"],
+        "questions": normalize_questions(spec["questions"]),
+    }
+
+
+def _as_bool(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"yes", "true", "1", "y"}:
+        return True
+    if text in {"no", "false", "0", "n"}:
+        return False
+    return value
 
 
 def merge_answers_into_project(project_id: str, answers: dict[str, Any]) -> dict[str, Any]:
@@ -176,7 +326,7 @@ def merge_answers_into_project(project_id: str, answers: dict[str, Any]) -> dict
         constraints["survey"] = survey
         for key, value in answers.items():
             if key in CONSTRAINT_KEYS and value not in (None, ""):
-                if key in {"load_lbf", "load_lb", "load_n", "load_kg", "max_mass_g", "safety_factor", "infill", "wall_mm"}:
+                if key in FLOAT_KEYS:
                     try:
                         constraints[key] = float(value)
                     except (TypeError, ValueError):
@@ -186,6 +336,8 @@ def merge_answers_into_project(project_id: str, answers: dict[str, Any]) -> dict
                         constraints[key] = int(value)
                     except (TypeError, ValueError):
                         constraints[key] = value
+                elif key in BOOL_KEYS:
+                    constraints[key] = _as_bool(value)
                 else:
                     constraints[key] = value
         conn.execute(

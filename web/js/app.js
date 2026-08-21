@@ -993,6 +993,50 @@ function renderCitations(result) {
     log.scrollTop = log.scrollHeight;
 }
 
+function renderVehicle(name, result) {
+    const log = document.getElementById('chat-log');
+    const div = document.createElement('div');
+    div.className = 'msg vehicle';
+    if (name === 'search_parts') {
+        const cat = result.catalog || [];
+        const vendors = result.vendors || result.citations || [];
+        const rows = cat.map(p =>
+            `<li><code>${escHtml(p.id)}</code> ${escHtml(p.name || '')} · $${escHtml(String(p.price_usd))}
+             <span class="cite-badge vendor">${escHtml(p.role || '')}</span></li>`
+        ).join('');
+        const links = vendors.map(h =>
+            `<li><a href="${escHtml(h.url || '')}" target="_blank" rel="noopener">${escHtml(h.title || h.url || '')}</a>
+             <span class="cite-badge ${escHtml(h.source || 'web')}">${escHtml(h.source || 'web')}</span></li>`
+        ).join('');
+        div.innerHTML = '<div class="who">parts</div>' +
+            (rows ? `<ul class="kit-bom">${rows}</ul>` : '<p class="muted">No catalog hits.</p>') +
+            (links ? `<ul class="cite-list">${links}</ul>` : '') +
+            `<p class="disclaimer">${escHtml(result.note || result.price_note || '')}</p>`;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+        return;
+    }
+    const possible = result.possible;
+    const chip = possible === true ? 'ok' : possible === false ? 'no' : '';
+    const alts = (result.alternatives || []).map(a =>
+        `<li>${escHtml(a.change || a.label || '')}</li>`
+    ).join('');
+    const kit = result.proposed_kit || result.kit;
+    const bom = ((kit && kit.lines) || []).map(l =>
+        `<li>${escHtml(String(l.qty))}× ${escHtml(l.name)} · $${escHtml(String(l.line_usd))}</li>`
+    ).join('');
+    div.innerHTML = `<div class="who">vehicle</div>
+      <div class="vehicle-card ${chip}">
+        <span class="chip ${chip}">${escHtml(result.verdict || name)}</span>
+        <p>${escHtml(result.for_user || result.for_model || result.error || '')}</p>
+        ${alts ? `<ul class="cite-list">${alts}</ul>` : ''}
+        ${bom ? `<ul class="kit-bom">${bom}</ul>` : ''}
+        <p class="disclaimer">${escHtml((kit && kit.price_note) || result.disclaimer || '')}</p>
+      </div>`;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
 async function sendChat() {
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
@@ -1074,6 +1118,12 @@ async function sendChatText(text) {
                     renderGenerate(ev.result || {});
                     refreshViewer(currentProjectId);
                     api('/api/projects/' + currentProjectId).then(p => renderParts(p.assembly || {})).catch(() => {});
+                } else if (ev.type === 'tool_result' && (ev.name === 'score_vehicle' || ev.name === 'propose_vehicle' || ev.name === 'search_parts' || ev.name === 'commit_cots_kit')) {
+                    renderVehicle(ev.name, ev.result || {});
+                    if (ev.name === 'commit_cots_kit' && ev.result && ev.result.ok) {
+                        refreshViewer(currentProjectId);
+                        api('/api/projects/' + currentProjectId).then(p => renderParts(p.assembly || {})).catch(() => {});
+                    }
                 } else if (ev.type === 'tool_result' && ev.name === 'check_feasibility') {
                     renderFeasibility(ev.result || {});
                 } else if (ev.type === 'error') {

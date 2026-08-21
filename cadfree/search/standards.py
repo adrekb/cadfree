@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import httpx
 
-from cadfree.store.db import get_setting
+from cadfree.cots.catalog import HOBBY_VENDOR_DOMAINS
 
 LOG = logging.getLogger(__name__)
 
@@ -80,10 +80,16 @@ VENDOR_DOMAINS = (
     "sabic.com",
     "dupont.com",
 )
-OFFICIAL_DOMAINS = BODY_DOMAINS + VENDOR_DOMAINS
+HOBBY_DOMAINS = HOBBY_VENDOR_DOMAINS
+OFFICIAL_DOMAINS = BODY_DOMAINS + VENDOR_DOMAINS + HOBBY_DOMAINS
 SITE_BOOST = (
     " (site:iso.org OR site:astm.org OR site:asme.org OR site:nist.gov"
     " OR site:sae.org OR site:din.de OR site:iec.ch OR site:everyspec.com)"
+)
+PARTS_SITE_BOOST = (
+    " (site:getfpv.com OR site:racedayquads.com OR site:store.tmotor.com"
+    " OR site:hobbyking.com OR site:betafpv.com OR site:shop.iflight.com"
+    " OR site:rotorriot.com OR site:newbeedrone.com)"
 )
 
 STANDARD_RE = re.compile(
@@ -133,7 +139,7 @@ def source_kind(url: str) -> str:
     host = _host(url)
     if _host_in(host, BODY_DOMAINS):
         return "body"
-    if _host_in(host, VENDOR_DOMAINS):
+    if _host_in(host, VENDOR_DOMAINS) or _host_in(host, HOBBY_DOMAINS):
         return "vendor"
     if host.endswith("wikipedia.org") or host == "wikipedia.org":
         return "encyclopedia"
@@ -151,6 +157,10 @@ def rewrite_query(query: str, *, intent: str = "standards") -> str:
     if intent == "machine":
         if not re.search(r"build volume|envelope|spec", q, re.I):
             q = q + " official specifications build volume"
+        return q
+    if intent == "parts":
+        if not re.search(r"\b(buy|in stock|vendor|datasheet)\b", q, re.I):
+            q = q + " buy"
         return q
     if STANDARD_RE.search(q):
         return q
@@ -324,6 +334,21 @@ def search_standards(query: str, intent: str = "standards", max_results: int = 8
         extra = search_web(rewritten + SITE_BOOST, max_results=max(4, max_results // 2))
         annotated.extend(annotate_result(item) for item in extra)
     ranked = rank_results(dedupe_results(annotated))
+    if intent == "parts" and not any(item.get("source") == "vendor" for item in ranked):
+        extra = search_web(rewritten + PARTS_SITE_BOOST, max_results=max(4, max_results // 2))
+        annotated.extend(annotate_result(item) for item in extra)
+        ranked = rank_results(dedupe_results(annotated))
+    note = (
+        "Prefer standards bodies, then manufacturer datasheets. Full standard "
+        "PDFs are often paywalled — cite the document and the publicly stated "
+        "requirement; do not invent clauses."
+    )
+    if intent == "parts":
+        note = (
+            "Hobby-vendor search hits, not live inventory. Do not claim a part "
+            "is in stock or at a price because a snippet said so. Confirm on "
+            "the vendor page. Bundled catalog prices are street-typical."
+        )
     return {
         "ok": True,
         "query": query,
@@ -339,11 +364,7 @@ def search_standards(query: str, intent: str = "standards", max_results: int = 8
             }
             for item in ranked[:max_results]
         ],
-        "note": (
-            "Prefer standards bodies, then manufacturer datasheets. Full standard "
-            "PDFs are often paywalled — cite the document and the publicly stated "
-            "requirement; do not invent clauses."
-        ),
+        "note": note,
     }
 
 

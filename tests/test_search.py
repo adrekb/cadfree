@@ -26,6 +26,12 @@ def test_extract_standard_ids():
     assert any("IPC" in x and "610" in x for x in found)
 
 
+def test_rewrite_query_parts_does_not_add_iso():
+    q = rewrite_query("2207 1750KV motor", intent="parts")
+    assert "ISO" not in q
+    assert "buy" in q.lower()
+
+
 def test_rewrite_query_adds_bodies():
     q = rewrite_query("printed PETG bracket tensile")
     assert "ISO" in q or "ASTM" in q

@@ -79,3 +79,74 @@ result = (
 )
 result = result.edges("|Z").fillet(p["fillet_mm"])
 '''
+
+
+STARTER_QUAD = '''\
+"""Printable X-frame. PARAMS match a committed COTS kit — not invented motors.
+
+Hole patterns and the battery tray come from catalog envelopes (motor PCD,
+FC square, pack size). Off-the-shelf electronics stay purchased BOM lines.
+"""
+import cadquery as cq
+from math import cos, sin, radians
+
+PARAMS = {
+    "arm_mm": 220.0,
+    "arm_w_mm": 14.0,
+    "arm_h_mm": 6.0,
+    "hub_mm": 42.0,
+    "hub_plate_mm": 3.0,
+    "motor_pcd_mm": 16.0,
+    "motor_hole_mm": 3.0,
+    "fc_pcd_mm": 30.5,
+    "fc_hole_mm": 3.0,
+    "batt_l_mm": 72.0,
+    "batt_w_mm": 36.0,
+    "batt_h_mm": 28.0,
+    "standoff_mm": 20.0,
+}
+
+p = PARAMS
+span = float(p["arm_mm"])
+tw = float(p["arm_w_mm"])
+th = float(p["arm_h_mm"])
+hub = float(p["hub_mm"])
+mpcd = float(p["motor_pcd_mm"])
+mdia = float(p["motor_hole_mm"])
+fcd = float(p["fc_hole_mm"])
+fcpcd = float(p["fc_pcd_mm"])
+r = span / 2.0
+pad_r = max(12.0, mpcd / 2.0 + mdia + 3.0)
+
+cross = (
+    cq.Workplane("XY").box(span + 2.0 * pad_r, tw, th)
+    .union(cq.Workplane("XY").box(tw, span + 2.0 * pad_r, th))
+    .union(cq.Workplane("XY").box(hub, hub, max(th, float(p["hub_plate_mm"]))))
+)
+pads = (
+    cq.Workplane("XY")
+    .pushPoints([(r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r)])
+    .circle(pad_r)
+    .extrude(th)
+)
+frame = cross.union(pads)
+
+hole_pts = []
+for cx, cy in ((r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r)):
+    for i in range(4):
+        a = radians(45.0 + 90.0 * i)
+        hole_pts.append((cx + (mpcd / 2.0) * cos(a), cy + (mpcd / 2.0) * sin(a)))
+
+result = (
+    frame.faces(">Z")
+    .workplane()
+    .pushPoints(hole_pts)
+    .hole(mdia)
+    .faces(">Z")
+    .workplane()
+    .rect(fcpcd, fcpcd, forConstruction=True)
+    .vertices()
+    .hole(fcd)
+    .rotate((0, 0, 0), (0, 0, 1), 45)
+)
+'''

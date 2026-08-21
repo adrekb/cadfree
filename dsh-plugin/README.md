@@ -10,5 +10,8 @@ runtime; this package *is* a plugin.
    surface the Python agent loop uses (including `search_standards` and
    `ask_survey`). Survey wait still happens in the Cadfree studio SSE loop.
 
+Prefer **MCP 2026-07-28** for new external clients: `POST http://127.0.0.1:8181/mcp`
+(Streamable HTTP, **no sessions**). Pass `project_id` on every `tools/call`.
+
 The Python app at `http://127.0.0.1:8181` is the product UI (Carrot). Use dsh
 when you want Cadfree tools inside an existing harness session.

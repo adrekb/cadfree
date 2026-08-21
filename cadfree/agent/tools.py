@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cadfree.agent.survey import create_survey, list_pending, normalize_questions
+from cadfree.agent.survey import create_survey, list_pending, normalize_questions, questions_for_template
 from cadfree.cad.assembly import (
     assembly_snapshot,
     ensure_default_part,
@@ -41,6 +41,8 @@ from cadfree.physics.dispatch import run_solvers, solve_on_part
 from cadfree.physics.topology import run_generate
 from cadfree.physics.engine import solve_formula
 from cadfree.store.db import db
+from cadfree.cots.kit import commit_cots_kit, propose_vehicle, search_parts
+from cadfree.cots.score import score_vehicle_spec, spec_from_constraints
 
 
 def _row(project_id: str) -> dict[str, Any]:
@@ -295,17 +297,74 @@ def make_handlers(project_id: str) -> dict[str, Any]:
     def fetch_url(url: str) -> dict[str, Any]:
         return read_url(url)
 
-    def ask_survey(questions: Any, title: str = "") -> dict[str, Any]:
-        qs = normalize_questions(questions)
+    def ask_survey(questions: Any = None, title: str = "", template: str = "") -> dict[str, Any]:
+        tpl = (template or "").strip()
+        if tpl:
+            spec = questions_for_template(tpl)
+            qs = spec["questions"]
+            title = title or spec["title"]
+        elif questions:
+            qs = normalize_questions(questions)
+        else:
+            raise ValueError("ask_survey needs template=drone|load or a questions list")
+        if questions and tpl:
+            qs = normalize_questions(questions)
         created = create_survey(project_id, title, qs)
         return {
             "ok": True,
             "survey_id": created["id"],
             "title": created["title"],
             "questions": created["questions"],
+            "template": tpl or None,
             "waiting": True,
             "note": "The form is on screen. Do not invent answers; wait for the tool result.",
         }
+
+    def score_vehicle(**kwargs: Any) -> dict[str, Any]:
+        p = _row(project_id)
+        constraints = json.loads(p["constraints"] or "{}")
+        spec = spec_from_constraints(constraints, kwargs or None)
+        return score_vehicle_spec(**spec)
+
+    def propose_veh(**kwargs: Any) -> dict[str, Any]:
+        return propose_vehicle(project_id, **(kwargs or {}))
+
+    def search_cots(
+        query: str,
+        role: str = "",
+        class_id: str = "",
+        budget_usd: float | None = None,
+        limit: int = 8,
+    ) -> dict[str, Any]:
+        return search_parts(
+            query,
+            role=role or None,
+            class_id=class_id or None,
+            budget_usd=budget_usd,
+            limit=int(limit or 8),
+        )
+
+    def commit_kit(
+        class_id: str = "",
+        motor_id: str = "",
+        prop_id: str = "",
+        battery_id: str = "",
+        fc_id: str = "",
+        esc_id: str = "",
+        accept_alternative: bool = False,
+        printed_frame: bool | None = None,
+    ) -> dict[str, Any]:
+        return commit_cots_kit(
+            project_id,
+            class_id=class_id or None,
+            motor_id=motor_id or None,
+            prop_id=prop_id or None,
+            battery_id=battery_id or None,
+            fc_id=fc_id or None,
+            esc_id=esc_id or None,
+            accept_alternative=bool(accept_alternative),
+            printed_frame=printed_frame,
+        )
 
     def list_assy() -> dict[str, Any]:
         p = _row(project_id)
@@ -467,4 +526,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "solve_formula": solve_f,
         "run_solvers": solvers,
         "generate_designs": generate_designs,
+        "score_vehicle": score_vehicle,
+        "propose_vehicle": propose_veh,
+        "search_parts": search_cots,
+        "commit_cots_kit": commit_kit,
     }
