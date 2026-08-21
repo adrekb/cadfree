@@ -224,6 +224,13 @@ async function loadStudio(id) {
     document.getElementById('stl-download').href = '/api/projects/' + id + '/stl';
     refreshViewer(id);
     loadMotion(id);
+    if (window.cadfreeViewer) {
+        window.cadfreeViewer.onPick = (pickIndex) => {
+            if (!pickIndex) return;
+            const feat = featureCache.find(f => Number(f.pick_index) === Number(pickIndex));
+            if (feat) selectFeature(feat.id);
+        };
+    }
 }
 
 function renderParts(assembly) {
@@ -398,9 +405,10 @@ function renderFeatureTree(features, meta) {
         const rows = byBody.get(body).map(feat => {
             const sel = (feat.selectors || []).slice(-1)[0];
             const on = feat.id === selectedFeatureId ? ' on' : '';
+            const live = feat.live && feat.pick_index ? '<span class="sel">3D pick</span>' : '';
             return `<button type="button" class="feature-row${on}" data-feature="${escHtml(feat.id)}">
               <span class="feature-kind">${escHtml(feat.kind)}</span>
-              <span class="lbl">${escHtml(feat.label)}${sel ? `<span class="sel">${escHtml(sel)}</span>` : ''}</span>
+              <span class="lbl">${escHtml(feat.label)}${sel ? `<span class="sel">${escHtml(sel)}</span>` : ''}${live}</span>
             </button>`;
         }).join('');
         return `<div class="feature-group"><div class="feature-group-name">${escHtml(body)}</div>${rows}</div>`;
@@ -422,6 +430,9 @@ function selectFeature(id) {
     if (!feat) return;
     showFeatureInspector(feat);
     revealFeatureInEditor(feat);
+    if (window.cadfreeViewer && typeof window.cadfreeViewer.highlight === 'function') {
+        window.cadfreeViewer.highlight(feat.pick_index || 0);
+    }
 }
 
 function showFeatureInspector(feat) {

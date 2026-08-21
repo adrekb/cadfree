@@ -132,7 +132,9 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         snap = assembly_snapshot(project_id)
         active = get_part(project_id, None)
         src = active.get("cadquery_source") or p["cadquery_source"] or ""
-        tree = extract_features(src)
+        from cadfree.cad.record import load_live
+
+        tree = extract_features(src, live=load_live(part_dir(project_id, active["id"]) / "features.live.json"))
         return {
             "id": p["id"],
             "name": p["name"],
@@ -176,7 +178,12 @@ def make_handlers(project_id: str) -> dict[str, Any]:
                 "note": "Imported mesh — no CadQuery feature tree.",
                 "honest": FEATURE_TREE_NOTE,
             }
-        out = extract_features(part.get("cadquery_source") or "")
+        from cadfree.cad.record import load_live
+
+        out = extract_features(
+            part.get("cadquery_source") or "",
+            live=load_live(part_dir(project_id, part["id"]) / "features.live.json"),
+        )
         out["ok"] = True
         out["part_id"] = part["id"]
         return out

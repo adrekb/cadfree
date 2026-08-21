@@ -294,6 +294,13 @@ def create_app() -> FastAPI:
         item["feasibility"] = json.loads(item["feasibility"] or "{}")
         item["cadquery_source"] = active.get("cadquery_source") or item.get("cadquery_source") or ""
         item["params"] = extract_params(item["cadquery_source"])
+        from cadfree.cad.record import load_live
+
+        live = load_live(part_dir(project_id, active["id"]) / "features.live.json")
+        tree = extract_features(item["cadquery_source"], live=live)
+        item["features"] = tree.get("features") or []
+        item["feature_note"] = tree.get("honest") or FEATURE_TREE_NOTE
+        item["feature_live"] = bool(tree.get("live"))
         item["messages"] = [dict(m) for m in messages]
         item["stl_url"] = f"/api/projects/{project_id}/stl"
         item["pending_surveys"] = list_pending(project_id)
@@ -301,9 +308,6 @@ def create_app() -> FastAPI:
         item["active_part_id"] = snap.get("active_part_id")
         item["joints"] = list_joints(project_id)
         item["vision_attachments"] = list_attachments(project_id)
-        tree = extract_features(item["cadquery_source"])
-        item["features"] = tree.get("features") or []
-        item["feature_note"] = tree.get("honest") or FEATURE_TREE_NOTE
         return item
 
     @app.put("/api/projects/{project_id}/source")
@@ -341,7 +345,11 @@ def create_app() -> FastAPI:
                 "note": "Imported mesh — no CadQuery feature tree. Edit it in the original program and Import CAD again.",
                 "honest": FEATURE_TREE_NOTE,
             }
-        out = extract_features(part.get("cadquery_source") or "")
+        from cadfree.cad.assembly import part_dir
+        from cadfree.cad.record import load_live
+
+        live = load_live(part_dir(project_id, part["id"]) / "features.live.json")
+        out = extract_features(part.get("cadquery_source") or "", live=live)
         out["part_id"] = part["id"]
         out["imported"] = False
         return out

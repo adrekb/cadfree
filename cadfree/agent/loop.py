@@ -322,9 +322,9 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "list_features",
-            "CadQuery feature tree for the active part (boxes, holes, fillets…). "
-            "Not a SolidWorks history kernel — it is the operations in the Python. "
-            "Use feature_id with patch_feature to change THAT fillet.",
+            "CadQuery feature tree for the active part. Not a SolidWorks kernel — "
+            "after build_model we wrap Workplane and stamp STL pick-ids so the user "
+            "can click THAT fillet in 3D. Use feature_id with patch_feature.",
             {
                 "type": "object",
                 "properties": {"part_id": {"type": "string"}},

@@ -1,9 +1,10 @@
-"""Feature tree from CadQuery source.
+"""Feature tree from CadQuery source plus optional live face picks.
 
-CadQuery is a Python script, not a history kernel. We do not fork it and we
-do not invent OCCT face IDs. The tree is the Workplane operations in the
-script, in order. Clicking a fillet patches *that* call. Shared PARAMS keys
-are isolated so the other fillet does not move.
+CadQuery is not a SolidWorks history kernel. That is not the same as
+impossible: the AST lists operations, and when CadQuery runs we wrap
+Workplane, fingerprint faces, and stamp pick-ids into the STL so you can
+click THIS fillet in the 3D view. We do not fork CadQuery or claim OCCT
+TNaming.
 """
 
 from __future__ import annotations
@@ -14,9 +15,10 @@ from typing import Any
 from cadfree.cad.params import apply_params, extract_params
 
 FEATURE_TREE_NOTE = (
-    "CadQuery is a Python script, not a history kernel like SolidWorks. "
-    "This tree is the operations in the source. Click a fillet to change that "
-    "call. The STL has no face IDs — picking a fillet in the 3D view is not wired."
+    "CadQuery is not a SolidWorks history kernel — and that is not impossible. "
+    "Rebuild with CadQuery installed: we wrap Workplane, fingerprint faces after "
+    "each op, and stamp pick-ids into the STL so you can click a fillet in 3D. "
+    "Not OCCT TNaming; a messy boolean can scramble fingerprints."
 )
 
 FEATURE_METHODS = {
@@ -134,7 +136,7 @@ ARG_NAMES = {
 SKIP_NAMES = {"PARAMS", "p"}
 
 
-def extract_features(source: str) -> dict[str, Any]:
+def extract_features(source: str, live: dict[str, Any] | None = None) -> dict[str, Any]:
     """Parse CadQuery source into a feature list. Never invent ops."""
     params = extract_params(source)
     if not (source or "").strip():
@@ -179,12 +181,26 @@ def extract_features(source: str) -> dict[str, Any]:
                 _feature_from_call(call, kind, body_name, pending, params, len(features))
             )
             pending = []
+    if live:
+        from cadfree.cad.record import LIVE_NOTE, attach_live
+
+        features = attach_live(features, live)
+        note = str(live.get("note") or LIVE_NOTE)
+        return {
+            "features": features,
+            "params": params,
+            "parse_error": None,
+            "note": note,
+            "honest": note,
+            "live": True,
+        }
     return {
         "features": features,
         "params": params,
         "parse_error": None,
         "note": FEATURE_TREE_NOTE,
         "honest": FEATURE_TREE_NOTE,
+        "live": False,
     }
 
 
@@ -364,6 +380,8 @@ def _feature_from_call(
         "editable": bool(editable_args),
         "primary_index": primary_index,
         "primary": primary,
+        "pick_index": 0,
+        "live": False,
     }
 
 

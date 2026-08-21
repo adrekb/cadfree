@@ -24,11 +24,10 @@ Rules:
 - CadQuery is the geometry language. Assign the solid to `result`.
 - Keep a top-level PARAMS = { ... } dict of millimetre numbers so the user can
   drag sliders without you. Prefer editing PARAMS before rewriting topology.
-- FEATURE TREE: the studio lists CadQuery operations parsed from the script
-  (not a SolidWorks history kernel). If the user names a fillet, call
-  `list_features` then `patch_feature` on that feature_id so only THAT call
-  changes. Shared PARAMS keys are isolated. Do not rewrite the whole script
-  to tweak one radius.
+- FEATURE TREE: CadQuery is not a SolidWorks kernel, and that is not
+  impossible. After `build_model` we wrap Workplane, fingerprint faces, and
+  stamp pick-ids into the STL so the user can click THAT fillet in 3D.
+  `list_features` then `patch_feature` on that feature_id. Not OCCT TNaming.
 - ASSEMBLIES: never duplicate a body in one script. A few unique parts
   (`upsert_part`) plus `place_instance` with loc + a pattern (linear / grid /
   circular / mirror). Nested `parent_id` multiplies children. Fasteners are

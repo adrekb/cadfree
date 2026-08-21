@@ -276,7 +276,7 @@
       <h3>Rung 2 — mesh FEA</h3>
       <p>The production path is CadQuery → STEP/STL → <b>Gmsh</b> tetrahedral mesh → <b>CalculiX (ccx)</b> linear static → von Mises. That is the open stack (PyCCX, FreeCAD FEM, CadQuery’s gmsh plugin). Cadfree probes for <code>gmsh</code> and <code>ccx</code> and will not pretend FEA ran if they are missing.</p>
       <h3>You can still edit the CAD</h3>
-      <p>The studio is not chat-only. The <b>feature tree</b> on the left of the editor is the CadQuery operations in the Python — click a fillet, change that radius, Rebuild. It is not a SolidWorks history kernel: CadQuery has no persistent face IDs, so picking a fillet in the 3D view is not wired. PARAMS sliders still rebuild without rewriting topology. Monaco lets you edit the script yourself. Plan mode proposes; Agent mode is allowed to write files and run MATLAB.</p>
+      <p>The studio is not chat-only. The <b>feature tree</b> is CadQuery operations — click a fillet in the tree or on the 3D solid (after Rebuild with CadQuery installed). CadQuery is not a SolidWorks history kernel; we wrap Workplane at runtime and stamp face pick-ids into the STL. That is not OCCT topological naming. PARAMS sliders still rebuild without rewriting topology. Monaco lets you edit the script yourself.</p>
       <h3>Survey before geometry</h3>
       <p>The agent must not guess load direction, fasteners, environment, safety factor, or which standard applies. It opens a form in the chat. Answer it; the turn stays paused (SSE keepalives) until you submit.</p>
       <h3>Standards search</h3>

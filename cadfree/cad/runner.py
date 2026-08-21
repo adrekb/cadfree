@@ -31,6 +31,26 @@ RUNNER = textwrap.dedent(
         }), encoding="utf-8")
         sys.exit(2)
 
+    try:
+        from cadfree.cad.record import execute_recorded
+        live_path = stl_path.with_name("features.live.json")
+        recorded = execute_recorded(source, stl_path, live_path)
+        if not recorded.get("ok"):
+            meta_path.write_text(json.dumps(recorded), encoding="utf-8")
+            sys.exit(1)
+        meta_path.write_text(json.dumps({
+            "ok": True,
+            "error": "",
+            "step": recorded.get("step") or "",
+            "live": recorded.get("live") or {},
+        }), encoding="utf-8")
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception:
+        # Fall through to the unrecorded exporter if the wrapper fails.
+        pass
+
     env = {"cq": cq, "cadquery": cq, "__name__": "__cadfree__"}
     try:
         exec(compile(source, "part.py", "exec"), env, env)
@@ -90,6 +110,8 @@ def build_cadquery(source: str, workdir: Path, timeout: int = 45) -> dict[str, A
     runner_path = workdir / "_runner.py"
     src_path.write_text(source, encoding="utf-8")
     runner_path.write_text(RUNNER, encoding="utf-8")
+    repo_root = str(Path(__file__).resolve().parent.parent.parent)
+    py_path = os.pathsep.join(filter(None, [repo_root, os.environ.get("PYTHONPATH", "")]))
     try:
         completed = subprocess.run(
             [sys.executable, str(runner_path), str(stl_path), str(meta_path), str(src_path)],
@@ -97,7 +119,7 @@ def build_cadquery(source: str, workdir: Path, timeout: int = 45) -> dict[str, A
             capture_output=True,
             text=True,
             timeout=timeout,
-            env={**os.environ, "CADQUERY_LOGLEVEL": "ERROR"},
+            env={**os.environ, "CADQUERY_LOGLEVEL": "ERROR", "PYTHONPATH": py_path},
             check=False,
         )
     except subprocess.TimeoutExpired:
@@ -124,6 +146,7 @@ def build_cadquery(source: str, workdir: Path, timeout: int = 45) -> dict[str, A
         "metrics": metrics.to_dict(),
         "params": extract_params(source),
         "cadquery_available": True,
+        "live": meta.get("live") or {},
     }
 
 
