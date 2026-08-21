@@ -114,6 +114,10 @@
         </label>
         <span class="spacer"></span>
         <button class="btn btn-ghost" onclick="rebuildNow()">Rebuild</button>
+        <label class="btn btn-ghost" style="cursor:pointer">
+          <input id="import-cad" type="file" accept=".step,.stp,.iges,.igs,.brep,.brp,.stl,.obj,.3mf,.ply,.gltf,.glb,.zip" multiple hidden onchange="importCadFiles(event)">
+          Import CAD
+        </label>
         <a class="btn btn-ghost" id="stl-download" href="#" download="model.stl">STL</a>
         <button class="btn btn-primary" onclick="toggleAgentSide()">Agent</button>
       </div>
@@ -135,8 +139,8 @@
           <div id="attach-preview" class="attach-preview"></div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
             <label class="btn btn-ghost" style="cursor:pointer">
-              <input id="chat-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onchange="uploadChatFiles(event)">
-              Attach drawing
+              <input id="chat-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif,.step,.stp,.iges,.igs,.brep,.stl,.obj,.3mf,.ply,.gltf,.glb,.zip" multiple hidden onchange="uploadChatFiles(event)">
+              Attach / import
             </label>
             <button class="btn btn-primary" id="chat-send" onclick="sendChat()">
               <svg class="ico"><use href="#i-send"/></svg> Send
@@ -261,7 +265,9 @@
       <h3>DeepSeek V4 Pro</h3>
       <p>DeepSeek is text-only — it cannot read a drawing or a photo of a part. Drawings need a <b>vision-native</b> model: OpenAI GPT-4.1 / GPT-4o, Anthropic Claude, Gemini 2.5, or an OpenRouter vision model. Attach the image in chat. Thinking levels still work on DeepSeek for text-only agent work.</p>
       <h3>Large assemblies</h3>
-      <p>Not one giant CadQuery file and not a merged mega-STL. Unique parts (up to 48 CadQuery solids) are tessellated once. Instances carry a transform + linear / grid / circular / mirror pattern. Nested <code>parent_id</code> multiplies children — a patterned frame of patterned brackets. The viewer GPU-instances those meshes (cap 2000 placements). Fasteners are BOM lines with no solid. STL download is the active unique part, not a boolean of the whole assembly.</p>
+      <p>Shop-scale, not a car: unique parts (up to 32 solids) tessellated once, then linear / grid / circular / mirror instances (cap 400). Nested <code>parent_id</code> multiplies children. Fasteners are BOM lines. STL download is the active unique part.</p>
+      <h3>Import from other programs</h3>
+      <p>Fusion, SolidWorks, FreeCAD, Onshape, Inventor, Blender: use <b>Import CAD</b> (or drop the file in chat). <b>STEP</b> is the right assembly export — Cadfree splits solids and keeps world coordinates in each mesh. STL / 3MF / OBJ / PLY are single bodies (or a zip of them). Native <code>.sldprt</code> / <code>.f3d</code> / <code>.ipt</code> are not readable; export STEP or STL from that program. STEP needs CadQuery (<code>pip install cadquery</code>). Imported parts have no PARAMS — edit them there, re-import here.</p>
     </div>
   </section>
 </main>

@@ -82,15 +82,16 @@ def _bind_tools(project_id: str) -> None:
         ),
         Tool(
             "upsert_part",
-            "Create or update a unique part. kind: part | purchased | fastener | subassembly. "
-            "Purchased/fastener/subassembly need no CadQuery. Large assemblies reuse these, they do not add more scripts.",
+            "Create or update a unique part. kind: part | purchased | fastener | subassembly | imported. "
+            "Purchased/fastener/subassembly need no CadQuery. Imported parts come from Import CAD (STEP/STL). "
+            "Shop-scale assemblies reuse these, they do not add more scripts.",
             {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
                     "source": {"type": "string"},
                     "part_id": {"type": "string"},
-                    "kind": {"type": "string", "enum": ["part", "purchased", "fastener", "subassembly"]},
+                    "kind": {"type": "string", "enum": ["part", "purchased", "fastener", "subassembly", "imported"]},
                     "material_id": {"type": "string"},
                 },
                 "required": ["name"],
@@ -103,7 +104,7 @@ def _bind_tools(project_id: str) -> None:
             "Place a part in the assembly. loc is mm + degrees {x,y,z,rx,ry,rz}. "
             "pattern: {kind: none|linear|grid|circular|mirror, count, dx, dy, dz, nx, ny, nz, radius, axis, at}. "
             "parent_id is another INSTANCE id — a patterned parent multiplies children "
-            "(e.g. 12 bays × 4 brackets). This is how large assemblies exist. Cap 2000 GPU instances.",
+            "(e.g. 12 bays × 4 brackets). Shop-scale cap is 400 instances of up to 32 unique parts.",
             {
                 "type": "object",
                 "properties": {

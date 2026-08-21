@@ -25,6 +25,7 @@ from cadfree.cad.assembly import (
     set_active_part,
 )
 from cadfree.cad.params import STARTER_BRACKET, apply_params, extract_params
+from cadfree.cad.import_cad import import_bytes, import_status
 from cadfree.cad.runner import build_cadquery, cadquery_status
 from cadfree.catalog import catalog_payload, preset_by_id
 from cadfree.manufacturing.evaluate import evaluate
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
         return {
             "ok": True,
             "cadquery": cadquery_status(),
+            "import": import_status(),
             "matlab": find_engine(),
             "simulation": sim_probe(),
             "llm": {k: (bool(v) if k == "api_key" else v) for k, v in llm_config().items()},
@@ -271,6 +273,38 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "project not found")
         ensure_default_part(project_id, row["cadquery_source"] or "")
         part = get_part(project_id, None)
+        if part.get("kind") == "imported":
+            stl = part_dir(project_id, part["id"]) / "model.stl"
+            if not stl.is_file():
+                return {"ok": False, "error": "Imported part has no mesh. Import CAD again."}
+            mesh = load_mesh(stl)
+            metrics = metrics_from_mesh(mesh)
+            caps = _project_caps(json.loads(row["capability_ids"] or "[]"))
+            constraints = json.loads(row["constraints"] or "{}")
+            report = evaluate(metrics, caps, constraints).to_dict()
+            with db() as conn:
+                conn.execute(
+                    """UPDATE projects SET metrics = ?, feasibility = ?, status = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (
+                        json.dumps(metrics.to_dict()),
+                        json.dumps(report),
+                        "feasible" if report.get("possible") else "infeasible",
+                        _now(),
+                        project_id,
+                    ),
+                )
+            return {
+                "ok": True,
+                "imported": True,
+                "error": "",
+                "metrics": metrics.to_dict(),
+                "feasibility": report,
+                "stl_url": f"/api/projects/{project_id}/parts/{part['id']}/stl?t={_now()}",
+                "scene_url": f"/api/projects/{project_id}/scene",
+                "assembly": assembly_snapshot(project_id),
+                "note": "Imported mesh — PARAMS do not apply.",
+            }
         built = build_cadquery(part.get("cadquery_source") or row["cadquery_source"], part_dir(project_id, part["id"]))
         if not built.get("ok"):
             return built
@@ -359,6 +393,31 @@ def create_app() -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
         return {"ok": True, "part": part, "params": extract_params(part.get("cadquery_source") or "")}
+
+    @app.post("/api/projects/{project_id}/import")
+    async def import_cad_file(project_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        data = await file.read()
+        result = import_bytes(project_id, file.filename or "import.bin", data)
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error") or "import failed")
+        result["assembly"] = assembly_snapshot(project_id)
+        result["scene_url"] = f"/api/projects/{project_id}/scene"
+        slim_parts = []
+        for part in result.get("parts") or []:
+            slim_parts.append(
+                {
+                    "id": part["id"],
+                    "name": part.get("name"),
+                    "kind": part.get("kind"),
+                    "metrics": part.get("metrics") or {},
+                }
+            )
+        result["parts"] = slim_parts
+        return result
 
     @app.post("/api/projects/{project_id}/attachments")
     async def upload_attachment(project_id: str, file: UploadFile = File(...)) -> dict[str, Any]:

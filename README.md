@@ -16,7 +16,8 @@ The UI is **Carrot’s** glass workspace (same stylesheet, Monaco editor, Plan/A
 - **Standards search** — ISO, ASTM, ASME, DIN, SAE, MIL-STD, NAS, IPC, plus manufacturer datasheets. Official bodies rank first. Paywalled PDFs are cited, never invented. Optional Brave Search key in Settings (`pip install -e ".[search]"` for the DuckDuckGo library).
 - **Adjustable thinking** — Think **off / low / high / max**. High is the default. DeepSeek is **not vision-native**.
 - **Vision** — OpenAI (`gpt-4.1`, `gpt-4o`), Anthropic, Gemini (`gemini-2.5-flash` / `pro`), and OpenRouter vision models read drawings/photos attached in chat. Default provider is OpenAI, not DeepSeek.
-- **Assemblies** — unique CadQuery parts (≤48 solids) + GPU-instanced placements with linear/grid/circular/mirror patterns (cap 2000). Nested `parent_id` multiplies children. Fasteners are BOM-only. Not one giant script or merged STL.
+- **Assemblies** — shop-scale: unique parts (≤32 solids) + GPU-instanced placements with linear/grid/circular/mirror patterns (cap 400). Nested `parent_id` multiplies children. Fasteners are BOM-only.
+- **Import** — STEP / IGES / BREP (CadQuery/OCCT) or STL / 3MF / OBJ / PLY / zip from Fusion, SolidWorks, FreeCAD, Onshape, Inventor, Blender. Native `.sldprt` / `.f3d` / `.ipt` must be exported to STEP or STL first.
 
 ## Run
 

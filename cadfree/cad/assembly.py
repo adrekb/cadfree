@@ -23,11 +23,11 @@ from cadfree.paths import project_dir
 from cadfree.store.db import db
 
 # GPU instances, not concatenated meshes. CAD kernels work the same way.
-MAX_EXPANDED = 2000
-MAX_UNIQUE_PARTS = 48
+MAX_EXPANDED = 400
+MAX_UNIQUE_PARTS = 32
 # Merged STL download only — preview never uses this path.
 MERGE_STL_CAP = 40
-PART_KINDS = ("part", "purchased", "fastener", "subassembly")
+PART_KINDS = ("part", "purchased", "fastener", "subassembly", "imported")
 _PALETTE = (
     (0.96, 0.51, 0.25),
     (0.45, 0.72, 0.89),
@@ -367,7 +367,7 @@ def upsert_part(
     if not part_id and len(list_parts(project_id)) >= MAX_UNIQUE_PARTS:
         raise ValueError(
             f"This project already has {MAX_UNIQUE_PARTS} unique parts. "
-            "Large assemblies are extra instances of those parts, not more scripts."
+            "Shop-scale assemblies are extra instances of those parts, not more scripts."
         )
     if part_id:
         with db() as conn:
@@ -385,7 +385,7 @@ def upsert_part(
             )
         return get_part(project_id, part_id)
     pid = _new_id()
-    src = source if kind == "part" else (source or "")
+    src = source if kind in {"part", "imported"} else (source or "")
     with db() as conn:
         conn.execute(
             """INSERT INTO parts(id, project_id, name, kind, cadquery_source, metrics, qty, material_id, notes, created_at, updated_at)
@@ -415,6 +415,14 @@ def save_part_metrics(project_id: str, part_id: str, metrics: dict[str, Any]) ->
         conn.execute(
             "UPDATE parts SET metrics = ?, updated_at = datetime('now') WHERE id = ?",
             (json.dumps(metrics), part_id),
+        )
+
+
+def save_part_notes(part_id: str, notes: str) -> None:
+    with db() as conn:
+        conn.execute(
+            "UPDATE parts SET notes = ?, updated_at = datetime('now') WHERE id = ?",
+            (notes, part_id),
         )
 
 

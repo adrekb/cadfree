@@ -18,6 +18,7 @@ from cadfree.cad.assembly import (
     upsert_part,
 )
 from cadfree.cad.params import apply_params, extract_params
+from cadfree.cad.import_cad import import_status
 from cadfree.cad.runner import build_cadquery, cadquery_status
 from cadfree.catalog import MATERIALS, catalog_payload
 from cadfree.manufacturing.evaluate import evaluate
@@ -102,7 +103,7 @@ def make_handlers(project_id: str) -> dict[str, Any]:
     def get_workshop() -> dict[str, Any]:
         with db() as conn:
             caps = [_cap_dict(r) for r in conn.execute("SELECT * FROM capabilities").fetchall()]
-        return {"capabilities": caps, "catalog": catalog_payload(), "cadquery": cadquery_status(), "matlab": find_engine(), "simulation": sim_probe()}
+        return {"capabilities": caps, "catalog": catalog_payload(), "cadquery": cadquery_status(), "import": import_status(), "matlab": find_engine(), "simulation": sim_probe()}
 
     def get_project() -> dict[str, Any]:
         p = _row(project_id)
@@ -141,6 +142,23 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         source = part.get("cadquery_source") or ""
         if part.get("kind") in {"purchased", "fastener"}:
             return {"ok": True, "purchased": True, "part_id": part["id"], "note": "Purchased/fastener — no CadQuery solid."}
+        if part.get("kind") == "imported":
+            stl = part_dir(project_id, part["id"]) / "model.stl"
+            if not stl.is_file():
+                return {"ok": False, "error": "Imported part has no mesh. Import CAD again."}
+            metrics = _metrics({}, stl.parent)
+            built = {
+                "ok": True,
+                "imported": True,
+                "metrics": metrics.to_dict() if metrics else {},
+                "note": "Imported mesh — PARAMS do not apply.",
+            }
+            save_part_metrics(project_id, part["id"], built.get("metrics") or {})
+            _save_build(project_id, built)
+            built["assembly"] = assembly_snapshot(project_id)
+            built["scene_url"] = f"/api/projects/{project_id}/scene"
+            built["part_id"] = part["id"]
+            return built
         if not source.strip():
             return {"ok": False, "error": "No CadQuery source yet. Call write_cadquery or upsert_part first."}
         built = build_cadquery(source, part_dir(project_id, part["id"]))

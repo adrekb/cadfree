@@ -197,7 +197,8 @@ async function loadStudio(id) {
     const p = await api('/api/projects/' + id);
     ensureMonaco();
     if (monacoEditor) monacoEditor.setValue(p.cadquery_source || '');
-    renderParams(p.params || {});
+    const activePart = ((p.assembly && p.assembly.parts) || []).find(x => x.id === p.active_part_id) || {};
+    renderParams(p.params || {}, activePart);
     renderParts(p.assembly || {});
     renderFeasibility(p.feasibility || {});
     renderMessages(p.messages || []);
@@ -222,7 +223,7 @@ function renderParts(assembly) {
         return;
     }
     const chips = parts.map(p =>
-        `<button class="part-chip ${p.id === active ? 'on' : ''}" onclick="selectPart('${p.id}')">${escHtml(p.name)}</button>`
+        `<button class="part-chip ${p.id === active ? 'on' : ''}" onclick="selectPart('${p.id}')" title="${escHtml(p.kind || 'part')}">${escHtml(p.name)}${p.kind === 'imported' ? ' · import' : ''}</button>`
     ).join('');
     const bomTxt = n > 1
         ? `<span class="muted small">${n} instances · ${assembly.unique_parts || parts.length} unique · ${bom.map(b => b.qty + '× ' + b.name).join(', ')}</span>`
@@ -234,7 +235,7 @@ async function selectPart(id) {
     if (!currentProjectId) return;
     const res = await api('/api/projects/' + currentProjectId + '/parts/' + id + '/activate', { method: 'POST' });
     if (monacoEditor) monacoEditor.setValue((res.part && res.part.cadquery_source) || '');
-    renderParams(res.params || {});
+    renderParams(res.params || {}, res.part || {});
     const p = await api('/api/projects/' + currentProjectId);
     renderParts(p.assembly || {});
 }
@@ -247,7 +248,9 @@ function renderAttachPreview() {
     ).join('');
 }
 
-async function uploadChatFiles(event) {
+const CAD_FILE = /\.(step|stp|iges|igs|brep|brp|stl|obj|3mf|ply|gltf|glb|zip|sldprt|sldasm|f3d|f3z|ipt|iam|x_t|fcstd)$/i;
+
+async function importCadFiles(event) {
     if (!currentProjectId) {
         alert('Create a project first.');
         event.target.value = '';
@@ -255,6 +258,41 @@ async function uploadChatFiles(event) {
     }
     const files = [...(event.target.files || [])];
     for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const resp = await fetch('/api/projects/' + currentProjectId + '/import', { method: 'POST', body: fd });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            appendMsg('import', (body.detail || body.error || ('Could not import ' + file.name)), 'tool');
+            continue;
+        }
+        const names = (body.parts || []).map(p => p.name).join(', ');
+        appendMsg('import', 'Imported ' + (names || file.name) + ((body.notes || []).length ? ' — ' + body.notes.join(' ') : ''), 'tool');
+        renderParts(body.assembly || {});
+        refreshViewer(currentProjectId);
+        if (body.parts && body.parts[0]) selectPart(body.parts[0].id);
+    }
+    if (event.target && typeof event.target.value === 'string') event.target.value = '';
+}
+
+async function uploadChatFiles(event) {
+    if (!currentProjectId) {
+        alert('Create a project first.');
+        event.target.value = '';
+        return;
+    }
+    const files = [...(event.target.files || [])];
+    const images = [];
+    const cad = [];
+    for (const file of files) {
+        if (CAD_FILE.test(file.name)) cad.push(file);
+        else images.push(file);
+    }
+    if (cad.length) {
+        const fake = { target: { files: cad, value: '' } };
+        await importCadFiles(fake);
+    }
+    for (const file of images) {
         const fd = new FormData();
         fd.append('file', file);
         const resp = await fetch('/api/projects/' + currentProjectId + '/attachments', { method: 'POST', body: fd });
@@ -270,8 +308,14 @@ async function uploadChatFiles(event) {
         appendMsg('note', 'This model is not vision-native. Switch to OpenAI, Anthropic, Gemini, or an OpenRouter vision model to read the drawing.', 'tool');
     }
 }
+
+function renderParams(params, part) {
     const host = document.getElementById('params-strip');
-    const keys = Object.keys(params);
+    if (part && part.kind === 'imported') {
+        host.innerHTML = '<span class="muted">Imported mesh — PARAMS do not apply. Edit it in the original program and Import CAD again.</span>';
+        return;
+    }
+    const keys = Object.keys(params || {});
     if (!keys.length) {
         host.innerHTML = '<span class="muted">No PARAMS dict in this script — add one so you can tweak without the agent.</span>';
         return;
