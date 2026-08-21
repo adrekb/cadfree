@@ -77,4 +77,5 @@ result = (
     ])
     .hole(p["hole_d_mm"])
 )
+result = result.edges("|Z").fillet(p["fillet_mm"])
 '''

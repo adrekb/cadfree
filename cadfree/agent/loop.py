@@ -17,6 +17,7 @@ PING_EVERY_S = 2.0
 PLAN_BLOCKED = {
     "write_cadquery",
     "set_params",
+    "patch_feature",
     "build_model",
     "run_matlab",
     "upsert_part",
@@ -317,6 +318,35 @@ def _bind_tools(project_id: str) -> None:
                 "required": ["params"],
             },
             handlers["set_params"],
+            mutating=True,
+        ),
+        Tool(
+            "list_features",
+            "CadQuery feature tree for the active part (boxes, holes, fillets…). "
+            "Not a SolidWorks history kernel — it is the operations in the Python. "
+            "Use feature_id with patch_feature to change THAT fillet.",
+            {
+                "type": "object",
+                "properties": {"part_id": {"type": "string"}},
+            },
+            handlers["list_features"],
+        ),
+        Tool(
+            "patch_feature",
+            "Change one numeric argument on one CadQuery operation (e.g. that fillet radius) "
+            "without rewriting the script. If the PARAMS key is shared, isolates this call "
+            "onto a new key so the other fillet does not move. Then call build_model.",
+            {
+                "type": "object",
+                "properties": {
+                    "feature_id": {"type": "string"},
+                    "value": {"type": "number"},
+                    "arg_index": {"type": "integer"},
+                    "part_id": {"type": "string"},
+                },
+                "required": ["feature_id", "value"],
+            },
+            handlers["patch_feature"],
             mutating=True,
         ),
         Tool(

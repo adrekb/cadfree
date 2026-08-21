@@ -18,6 +18,7 @@ from cadfree.cad.assembly import (
     upsert_part,
 )
 from cadfree.cad.params import apply_params, extract_params
+from cadfree.cad.features import FEATURE_TREE_NOTE, extract_features, patch_feature
 from cadfree.cad.import_cad import import_status
 from cadfree.cad.runner import build_cadquery, cadquery_status
 from cadfree.catalog import MATERIALS, catalog_payload
@@ -130,6 +131,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         ensure_default_part(project_id, p.get("cadquery_source") or "")
         snap = assembly_snapshot(project_id)
         active = get_part(project_id, None)
+        src = active.get("cadquery_source") or p["cadquery_source"] or ""
+        tree = extract_features(src)
         return {
             "id": p["id"],
             "name": p["name"],
@@ -146,6 +149,11 @@ def make_handlers(project_id: str) -> dict[str, Any]:
             "active_part_id": snap.get("active_part_id"),
             "joints": list_joints(project_id),
             "last_solvers": _last_solvers(project_id),
+            "feature_tree": {
+                "count": len(tree.get("features") or []),
+                "kinds": [f["kind"] for f in (tree.get("features") or [])],
+                "note": "Call list_features to inspect ops; patch_feature to change one fillet without rewriting the script. Not a SolidWorks history kernel.",
+            },
         }
 
     def write_cadquery(source: str, part_id: str | None = None) -> dict[str, Any]:
@@ -157,6 +165,31 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         source = apply_params(part.get("cadquery_source") or "", params)
         saved = _save_source(project_id, source, part["id"])
         return {"ok": True, "params": extract_params(source), "part_id": saved["id"]}
+
+    def list_features(part_id: str | None = None) -> dict[str, Any]:
+        part = get_part(project_id, part_id)
+        if part.get("kind") == "imported":
+            return {
+                "ok": True,
+                "imported": True,
+                "features": [],
+                "note": "Imported mesh — no CadQuery feature tree.",
+                "honest": FEATURE_TREE_NOTE,
+            }
+        out = extract_features(part.get("cadquery_source") or "")
+        out["ok"] = True
+        out["part_id"] = part["id"]
+        return out
+
+    def patch_one_feature(feature_id: str, value: float, arg_index: int = 0, part_id: str | None = None) -> dict[str, Any]:
+        part = get_part(project_id, part_id)
+        if part.get("kind") == "imported":
+            return {"ok": False, "error": "Imported mesh has no feature tree."}
+        result = patch_feature(part.get("cadquery_source") or "", feature_id, float(value), int(arg_index or 0))
+        if result.get("ok"):
+            _save_source(project_id, result["source"], part["id"])
+            result["part_id"] = part["id"]
+        return result
 
     def build_model(part_id: str | None = None) -> dict[str, Any]:
         ensure_default_part(project_id)
@@ -378,6 +411,8 @@ def make_handlers(project_id: str) -> dict[str, Any]:
         "get_project": get_project,
         "write_cadquery": write_cadquery,
         "set_params": set_params,
+        "list_features": list_features,
+        "patch_feature": patch_one_feature,
         "build_model": build_model,
         "check_feasibility": check_feasibility,
         "run_simulation": run_simulation,

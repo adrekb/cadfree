@@ -122,6 +122,19 @@
         <button class="btn btn-primary" onclick="toggleAgentSide()">Agent</button>
       </div>
       <div class="cad-main">
+        <aside class="feature-tree" id="feature-tree">
+          <div class="feature-tree-head">Feature tree</div>
+          <div class="feature-tree-list" id="feature-tree-list"></div>
+          <div class="feature-inspector" id="feature-inspector" hidden>
+            <label id="feature-value-label" for="feature-value">Value</label>
+            <div class="feature-inspector-row">
+              <input type="number" step="0.1" id="feature-value" onkeydown="if(event.key==='Enter')applyFeatureEdit()">
+              <button class="btn btn-primary" type="button" onclick="applyFeatureEdit()">Apply</button>
+            </div>
+            <p class="muted small" id="feature-inspect-hint"></p>
+          </div>
+          <p class="muted small" id="feature-tree-note"></p>
+        </aside>
         <div id="view-canvas"><canvas id="cad-canvas"></canvas></div>
         <div id="view-code-wrap">
           <div class="parts-strip" id="parts-strip"></div>
@@ -263,7 +276,7 @@
       <h3>Rung 2 — mesh FEA</h3>
       <p>The production path is CadQuery → STEP/STL → <b>Gmsh</b> tetrahedral mesh → <b>CalculiX (ccx)</b> linear static → von Mises. That is the open stack (PyCCX, FreeCAD FEM, CadQuery’s gmsh plugin). Cadfree probes for <code>gmsh</code> and <code>ccx</code> and will not pretend FEA ran if they are missing.</p>
       <h3>You can still edit the CAD</h3>
-      <p>The studio is not chat-only. PARAMS sliders rebuild without the model. The Monaco editor (Carrot’s code tab) lets you rewrite CadQuery yourself, then Rebuild. Plan mode proposes; Agent mode is allowed to write files and run MATLAB.</p>
+      <p>The studio is not chat-only. The <b>feature tree</b> on the left of the editor is the CadQuery operations in the Python — click a fillet, change that radius, Rebuild. It is not a SolidWorks history kernel: CadQuery has no persistent face IDs, so picking a fillet in the 3D view is not wired. PARAMS sliders still rebuild without rewriting topology. Monaco lets you edit the script yourself. Plan mode proposes; Agent mode is allowed to write files and run MATLAB.</p>
       <h3>Survey before geometry</h3>
       <p>The agent must not guess load direction, fasteners, environment, safety factor, or which standard applies. It opens a form in the chat. Answer it; the turn stays paused (SSE keepalives) until you submit.</p>
       <h3>Standards search</h3>

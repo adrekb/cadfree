@@ -39,6 +39,16 @@ def test_workshop_and_project(tmp_path, monkeypatch):
     assert scene.status_code == 200
     assert scene.json()["preview"] == "gpu-instances"
     assert "draws" in scene.json()
+    assert any(f["kind"] == "fillet" for f in project.json()["features"])
+    tree = client.get("/api/projects/" + created.json()["id"] + "/features")
+    assert tree.status_code == 200
+    fillet = next(f for f in tree.json()["features"] if f["kind"] == "fillet")
+    patched = client.post(
+        "/api/projects/" + created.json()["id"] + "/features/patch",
+        json={"feature_id": fillet["id"], "value": 2.0},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["params"]["fillet_mm"] == 2.0
 
 
 def test_survey_api_and_search_settings(tmp_path, monkeypatch):
@@ -119,4 +129,4 @@ def test_agent_tools_include_survey_and_search(tmp_path, monkeypatch):
     plug._PLUGINS.clear()
     _bind_tools("p-missing")
     names = set(all_tools())
-    assert {"ask_survey", "search_standards", "read_url", "list_assembly", "place_instance", "sweep_mechanism", "define_joint", "check_mesh", "lookup_formula", "solve_formula", "run_solvers"} <= names
+    assert {"ask_survey", "search_standards", "read_url", "list_assembly", "place_instance", "sweep_mechanism", "define_joint", "check_mesh", "lookup_formula", "solve_formula", "run_solvers", "list_features", "patch_feature"} <= names

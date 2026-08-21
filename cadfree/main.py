@@ -25,6 +25,7 @@ from cadfree.cad.assembly import (
     set_active_part,
 )
 from cadfree.cad.params import STARTER_BRACKET, apply_params, extract_params
+from cadfree.cad.features import FEATURE_TREE_NOTE, extract_features, patch_feature
 from cadfree.cad.import_cad import import_bytes, import_status
 from cadfree.cad.runner import build_cadquery, cadquery_status
 from cadfree.catalog import catalog_payload, preset_by_id
@@ -94,6 +95,13 @@ class ChatIn(BaseModel):
 
 class SurveyAnswersIn(BaseModel):
     answers: dict[str, Any]
+
+
+class FeaturePatchIn(BaseModel):
+    feature_id: str
+    value: float
+    arg_index: int = 0
+    part_id: str | None = None
 
 
 class JointIn(BaseModel):
@@ -293,6 +301,9 @@ def create_app() -> FastAPI:
         item["active_part_id"] = snap.get("active_part_id")
         item["joints"] = list_joints(project_id)
         item["vision_attachments"] = list_attachments(project_id)
+        tree = extract_features(item["cadquery_source"])
+        item["features"] = tree.get("features") or []
+        item["feature_note"] = tree.get("honest") or FEATURE_TREE_NOTE
         return item
 
     @app.put("/api/projects/{project_id}/source")
@@ -310,6 +321,48 @@ def create_app() -> FastAPI:
 
         save_part_source(project_id, part["id"], source)
         return {"ok": True, "source": source, "params": extract_params(source)}
+
+    @app.get("/api/projects/{project_id}/features")
+    def get_features(project_id: str, part_id: str | None = None) -> dict[str, Any]:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "project not found")
+        try:
+            part = get_part(project_id, part_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if part.get("kind") == "imported":
+            return {
+                "features": [],
+                "params": {},
+                "parse_error": None,
+                "imported": True,
+                "note": "Imported mesh — no CadQuery feature tree. Edit it in the original program and Import CAD again.",
+                "honest": FEATURE_TREE_NOTE,
+            }
+        out = extract_features(part.get("cadquery_source") or "")
+        out["part_id"] = part["id"]
+        out["imported"] = False
+        return out
+
+    @app.post("/api/projects/{project_id}/features/patch")
+    def patch_project_feature(project_id: str, body: FeaturePatchIn) -> dict[str, Any]:
+        from cadfree.cad.assembly import save_part_source
+
+        try:
+            part = get_part(project_id, body.part_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if part.get("kind") == "imported":
+            raise HTTPException(400, "Imported mesh has no feature tree.")
+        source = part.get("cadquery_source") or ""
+        result = patch_feature(source, body.feature_id, body.value, body.arg_index)
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error") or "Could not patch that feature.")
+        save_part_source(project_id, part["id"], result["source"])
+        result["part_id"] = part["id"]
+        return result
 
     @app.post("/api/projects/{project_id}/build")
     def build_project(project_id: str) -> dict[str, Any]:

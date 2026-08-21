@@ -10,6 +10,9 @@ let pendingAttachments = [];
 let currentVision = true;
 let motionFrames = [];
 let motionTimer = null;
+let selectedFeatureId = null;
+let featureCache = [];
+let featureDecorations = [];
 
 function escHtml(str) {
     const d = document.createElement('div');
@@ -192,6 +195,10 @@ function ensureMonaco() {
     monacoEditor = {
         getValue: () => ta.value,
         setValue: (v) => { ta.value = v; },
+        revealLineInCenter: () => {},
+        setSelection: () => {},
+        deltaDecorations: () => [],
+        focus: () => ta.focus(),
     };
 }
 
@@ -201,6 +208,11 @@ async function loadStudio(id) {
     if (monacoEditor) monacoEditor.setValue(p.cadquery_source || '');
     const activePart = ((p.assembly && p.assembly.parts) || []).find(x => x.id === p.active_part_id) || {};
     renderParams(p.params || {}, activePart);
+    renderFeatureTree(p.features || [], {
+        note: p.feature_note,
+        parse_error: p.feature_parse_error,
+        imported: activePart.kind === 'imported',
+    });
     renderParts(p.assembly || {});
     renderFeasibility(p.feasibility || {});
     renderMessages(p.messages || []);
@@ -241,6 +253,10 @@ async function selectPart(id) {
     renderParams(res.params || {}, res.part || {});
     const p = await api('/api/projects/' + currentProjectId);
     renderParts(p.assembly || {});
+    renderFeatureTree(p.features || [], {
+        note: p.feature_note,
+        imported: res.part && res.part.kind === 'imported',
+    });
 }
 
 function renderAttachPreview() {
@@ -331,6 +347,161 @@ function renderParams(params, part) {
     }).join('');
 }
 
+async function refreshFeatureTree() {
+    if (!currentProjectId) return;
+    try {
+        const tree = await api('/api/projects/' + currentProjectId + '/features');
+        renderFeatureTree(tree.features || [], tree);
+    } catch (e) {
+        renderFeatureTree([], { note: e.message || 'Could not read features.' });
+    }
+}
+
+function renderFeatureTree(features, meta) {
+    const list = document.getElementById('feature-tree-list');
+    const note = document.getElementById('feature-tree-note');
+    const inspector = document.getElementById('feature-inspector');
+    if (!list) return;
+    featureCache = features || [];
+    meta = meta || {};
+    if (note) {
+        note.textContent = meta.parse_error
+            ? ('Parse error: ' + meta.parse_error)
+            : (meta.note || meta.honest || '');
+    }
+    if (meta.imported) {
+        list.innerHTML = '<p class="muted small" style="padding:8px 12px">Imported mesh — no CadQuery tree.</p>';
+        if (inspector) inspector.hidden = true;
+        return;
+    }
+    if (meta.parse_error) {
+        list.innerHTML = '<p class="muted small" style="padding:8px 12px">Fix the script to see features.</p>';
+        if (inspector) inspector.hidden = true;
+        return;
+    }
+    if (!featureCache.length) {
+        list.innerHTML = '<p class="muted small" style="padding:8px 12px">No CadQuery operations yet. Write a script or let the agent.</p>';
+        if (inspector) inspector.hidden = true;
+        return;
+    }
+    const groups = [];
+    const byBody = new Map();
+    for (const feat of featureCache) {
+        const body = feat.body || 'script';
+        if (!byBody.has(body)) {
+            byBody.set(body, []);
+            groups.push(body);
+        }
+        byBody.get(body).push(feat);
+    }
+    list.innerHTML = groups.map(body => {
+        const rows = byBody.get(body).map(feat => {
+            const sel = (feat.selectors || []).slice(-1)[0];
+            const on = feat.id === selectedFeatureId ? ' on' : '';
+            return `<button type="button" class="feature-row${on}" data-feature="${escHtml(feat.id)}">
+              <span class="feature-kind">${escHtml(feat.kind)}</span>
+              <span class="lbl">${escHtml(feat.label)}${sel ? `<span class="sel">${escHtml(sel)}</span>` : ''}</span>
+            </button>`;
+        }).join('');
+        return `<div class="feature-group"><div class="feature-group-name">${escHtml(body)}</div>${rows}</div>`;
+    }).join('');
+    list.querySelectorAll('[data-feature]').forEach(el => {
+        el.onclick = () => selectFeature(el.dataset.feature);
+    });
+    const still = featureCache.find(f => f.id === selectedFeatureId);
+    if (still) showFeatureInspector(still);
+    else if (inspector) inspector.hidden = true;
+}
+
+function selectFeature(id) {
+    selectedFeatureId = id;
+    const feat = featureCache.find(f => f.id === id);
+    document.querySelectorAll('.feature-row').forEach(el => {
+        el.classList.toggle('on', el.dataset.feature === id);
+    });
+    if (!feat) return;
+    showFeatureInspector(feat);
+    revealFeatureInEditor(feat);
+}
+
+function showFeatureInspector(feat) {
+    const inspector = document.getElementById('feature-inspector');
+    const input = document.getElementById('feature-value');
+    const label = document.getElementById('feature-value-label');
+    const hint = document.getElementById('feature-inspect-hint');
+    if (!inspector || !input) return;
+    const primary = feat.primary || (feat.args || []).find(a => a.editable);
+    if (!primary || primary.value == null) {
+        inspector.hidden = false;
+        input.disabled = true;
+        input.value = '';
+        if (label) label.textContent = feat.kind;
+        if (hint) hint.textContent = 'No single number on this op — edit the highlighted line.';
+        return;
+    }
+    inspector.hidden = false;
+    input.disabled = false;
+    input.value = primary.value;
+    input.dataset.argIndex = String(primary.index || 0);
+    if (label) label.textContent = (primary.name || 'value') + (primary.key ? ' · ' + primary.key : '');
+    if (hint) {
+        hint.textContent = primary.kind === 'params'
+            ? 'Apply changes that call only. Shared PARAMS keys are isolated.'
+            : 'Apply rewrites this call only, then rebuilds.';
+    }
+    input.focus();
+    input.select();
+}
+
+function revealFeatureInEditor(feat) {
+    if (!monacoEditor || !feat) return;
+    const line = feat.line || 1;
+    const end = feat.end_line || line;
+    if (typeof monacoEditor.revealLineInCenter === 'function') {
+        monacoEditor.revealLineInCenter(line);
+    }
+    if (window.monaco && typeof monacoEditor.setSelection === 'function') {
+        const range = new window.monaco.Range(line, 1, end, (feat.end_col || 120) + 1);
+        monacoEditor.setSelection(range);
+        if (typeof monacoEditor.deltaDecorations === 'function') {
+            featureDecorations = monacoEditor.deltaDecorations(featureDecorations, [{
+                range,
+                options: { isWholeLine: true, className: 'feature-line-hi' },
+            }]);
+        }
+        monacoEditor.focus();
+    }
+}
+
+async function applyFeatureEdit() {
+    if (!currentProjectId || !selectedFeatureId) return;
+    const input = document.getElementById('feature-value');
+    if (!input || input.disabled) return;
+    const value = Number(input.value);
+    if (Number.isNaN(value)) return;
+    const argIndex = Number(input.dataset.argIndex || 0);
+    await saveSource();
+    let res;
+    try {
+        res = await api('/api/projects/' + currentProjectId + '/features/patch', {
+            method: 'POST',
+            body: JSON.stringify({
+                feature_id: selectedFeatureId,
+                value,
+                arg_index: argIndex,
+            }),
+        });
+    } catch (e) {
+        renderFeasibility({ summary: e.message, checks: [{ id: 'feature', status: 'fail', title: 'Feature', message: e.message }] });
+        return;
+    }
+    if (monacoEditor && res.source) monacoEditor.setValue(res.source);
+    selectedFeatureId = res.feature_id || selectedFeatureId;
+    renderFeatureTree(res.features || [], res);
+    if (res.params) renderParams(res.params);
+    rebuildNow();
+}
+
 function queueParamChange() {
     clearTimeout(paramTimer);
     paramTimer = setTimeout(applyParamEdits, 400);
@@ -367,6 +538,7 @@ async function rebuildNow() {
     renderParams(built.params || {});
     renderFeasibility(built.feasibility || {});
     renderParts(built.assembly || {});
+    await refreshFeatureTree();
     document.getElementById('stl-download').href = '/api/projects/' + currentProjectId + '/stl';
     refreshViewer(currentProjectId);
 }
@@ -800,6 +972,7 @@ async function sendChatText(text) {
             monacoEditor.setValue(p.cadquery_source || '');
             renderParams(p.params || {});
             renderParts(p.assembly || {});
+            renderFeatureTree(p.features || [], { note: p.feature_note });
         }
     } finally {
         agentStreaming = false;
